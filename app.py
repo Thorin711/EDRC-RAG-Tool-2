@@ -17,9 +17,6 @@ import openai
 DB_FULL_PATH = './vector_db_full'
 DB_JOURNAL_PATH = './vector_db_journals'
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-
-# --- ✅ PASTE YOUR DATABASE DOWNLOAD URLS HERE ---
-# Get these from your GitHub Releases "Assets" section
 DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_full.zip"
 DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_journals.zip"
 
@@ -121,6 +118,7 @@ def summarize_results_with_llm(user_query, _search_results):
         2.  After each piece of information or sentence you write, you **MUST** cite the source(s) it came from using the citation marker, e.g., [1], [2], or [1][3].
         3.  After the summary, add a "References" section and list all the sources you used with their full titles and corresponding citation marker.
         4.  If the context does not contain enough information to answer the question, state that.
+        5.  Use bulletpoint formatting for response.
 
         User's question: "{user_query}"
 
@@ -135,13 +133,13 @@ def summarize_results_with_llm(user_query, _search_results):
         """
         
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful research assistant that provides citations."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1, 
-            max_tokens=700 
+            temperature=1, 
+            max_tokens=2000 
         )
         return response.choices[0].message.content.strip()
     except Exception as e:

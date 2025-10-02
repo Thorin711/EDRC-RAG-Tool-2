@@ -7,6 +7,8 @@ Created on Fri Sep  5 15:36:42 2025
 
 import streamlit as st
 import os
+import requests
+import zipfile
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 import openai
@@ -15,6 +17,48 @@ import openai
 DB_FULL_PATH = './vector_db_full'
 DB_JOURNAL_PATH = './vector_db_journals'
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
+
+# --- ✅ PASTE YOUR DATABASE DOWNLOAD URLS HERE ---
+# Get these from your GitHub Releases "Assets" section
+DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_full.zip"
+DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_journals.zip"
+
+
+# --- Helper function to download and unzip the database ---
+def download_and_unzip_db(url, dest_folder, zip_name):
+    """Downloads and unzips the vector DB if it doesn't exist."""
+    if not os.path.exists(dest_folder):
+        st.info(f"Database for '{os.path.basename(dest_folder)}' not found. Downloading...")
+        
+        try:
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get('content-length', 0))
+                progress_bar = st.progress(0, text=f"Downloading {zip_name}...")
+                chunk_size = 8192
+                downloaded_size = 0
+                
+                zip_path = os.path.join(".", zip_name) # Save zip in root
+                with open(zip_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_size > 0:
+                            progress = min(int((downloaded_size / total_size) * 100), 100)
+                            progress_bar.progress(progress, text=f"Downloading {zip_name}... {progress}%")
+            
+            progress_bar.empty()
+            with st.spinner(f"Unzipping {zip_name}..."):
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall('.')
+            
+            os.remove(zip_path) # Clean up the zip file
+            st.success(f"Database '{os.path.basename(dest_folder)}' set up successfully!")
+            st.rerun() # Rerun the script to load the DB
+        except Exception as e:
+            st.error(f"Failed to download or unzip database from {url}. Error: {e}")
+            st.stop()
+
 
 # --- CACHING ---
 @st.cache_resource
@@ -25,11 +69,10 @@ def load_embedding_model():
 @st.cache_resource
 def load_vector_store(_embeddings, db_dir):
     """Loads the vector store from the specified persistent directory."""
-    if not os.path.exists(db_dir):
-        st.error(f"Database not found at {db_dir}! Please run `create_vectordb.py` script.")
-        st.stop()
     return Chroma(persist_directory=db_dir, embedding_function=_embeddings)
 
+
+# (The LLM functions 'improve_query_with_llm' and 'summarize_results_with_llm' are unchanged)
 @st.cache_data
 def improve_query_with_llm(user_query):
     """
@@ -64,7 +107,6 @@ def summarize_results_with_llm(user_query, _search_results):
     Generates a summary of the search results with citations using an OpenAI model.
     """
     try:
-        # Prepare the context from the search results, including titles for citations
         context_snippets = []
         for i, doc in enumerate(_search_results):
             title = doc.metadata.get('title', 'No Title Found')
@@ -79,7 +121,6 @@ def summarize_results_with_llm(user_query, _search_results):
         2.  After each piece of information or sentence you write, you **MUST** cite the source(s) it came from using the citation marker, e.g., [1], [2], or [1][3].
         3.  After the summary, add a "References" section and list all the sources you used with their full titles and corresponding citation marker.
         4.  If the context does not contain enough information to answer the question, state that.
-        5.  Use bullet point format for the summary.
 
         User's question: "{user_query}"
 
@@ -94,13 +135,13 @@ def summarize_results_with_llm(user_query, _search_results):
         """
         
         response = openai.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful research assistant that provides citations."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=1, 
-            max_completion_tokens=5000 
+            temperature=0.1, 
+            max_tokens=700 
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -111,6 +152,10 @@ def summarize_results_with_llm(user_query, _search_results):
 def main():
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
     
+    # --- Check for and download databases on startup ---
+    download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
+    download_and_unzip_db(DB_JOURNAL_URL, DB_JOURNAL_PATH, "vector_db_journals.zip")
+    
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
     
@@ -118,7 +163,6 @@ def main():
     if not api_key_present:
         st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
 
-    # --- Database selection widget ---
     db_choice = st.radio(
         "Select database to search:",
         ("Full Database", "Journal Articles Only"),
@@ -161,7 +205,6 @@ def main():
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
 
-    # --- ✅ MODIFIED: Removed the st.empty() placeholder for smoother rendering ---
     if submitted and user_query:
         st.cache_data.clear()
         

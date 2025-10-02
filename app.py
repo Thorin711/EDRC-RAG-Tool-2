@@ -139,7 +139,7 @@ def summarize_results_with_llm(user_query, _search_results):
                 {"role": "user", "content": prompt}
             ],
             temperature=1, 
-            max_tokens=2000 
+            max_completion_tokens=2000 
         )
         return response.choices[0].message.content.strip()
     except Exception as e:

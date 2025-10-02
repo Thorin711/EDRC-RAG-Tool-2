@@ -1,0 +1,6 @@
+streamlit
+langchain-huggingface
+langchain-chroma
+openai
+sentence-transformers
+pysqlite3-binary

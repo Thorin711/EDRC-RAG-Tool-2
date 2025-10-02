@@ -17,9 +17,8 @@ import openai
 DB_FULL_PATH = './vector_db_full'
 DB_JOURNAL_PATH = './vector_db_journals'
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_full.zip"
-DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.1/vector_db_journals.zip"
-
+DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_full.zip"
+DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_journals.zip"
 
 # --- Helper function to download and unzip the database ---
 def download_and_unzip_db(url, dest_folder, zip_name):

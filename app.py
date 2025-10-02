@@ -259,7 +259,7 @@ def main():
                             with st.expander("Show content snippet"):
                                 st.write(doc.page_content)
 
-                            st.caption(f"Source: {os.path.basename(source)}")
+                            st.caption(f"Source: {source}")
                             
             except Exception as e:
                 st.error(f"An error occurred during the search: {e}")

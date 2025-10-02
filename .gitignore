@@ -20,6 +20,7 @@ venv/
 
 # User-specific folders to ignore
 vector_db/
+vector_db_full/
 vector_db_journals/
 
 # Streamlit secrets

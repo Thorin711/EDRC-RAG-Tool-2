@@ -241,7 +241,7 @@ def main():
                             title = doc.metadata.get('title', 'No Title Found')
                             authors = doc.metadata.get('authors', 'No Authors Found')
                             source = doc.metadata.get('source', 'Unknown Source')
-                            source = source.split("\")[-1]
+                            source = source.split("\\")[-1]
                             year = doc.metadata.get('year', 'Unknown Year')
                             doi = doc.metadata.get('doi', '')
                             

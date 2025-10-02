@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# Databases
+*.sqlite3
+*.db
+
+# User-specific folders to ignore
+vector_db_full/
+vector_db_journals/
+
+# Streamlit secrets
+.streamlit/

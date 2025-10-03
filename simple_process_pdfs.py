@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Sep  4 16:51:44 2025
+This script processes a directory of PDF files using the GROBID service.
 
-@author: td00654
+It initializes a GROBID client, points it to a local GROBID server instance,
+and processes all PDF documents found in the specified input directory. The
+output is structured TEI XML, which is saved to the specified output directory.
+
+Note:
+    This script requires a running GROBID server. The server's address
+    should be configured in the `GrobidClient` instantiation.
 """
 
 from grobid_client.grobid_client import GrobidClient

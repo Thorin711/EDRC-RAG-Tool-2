@@ -1,3 +1,21 @@
+# -*- coding: utf-8 -*-
+"""
+This script builds a Chroma vector database from a collection of Markdown files.
+
+The process involves several steps:
+1.  Loading Markdown documents from a specified directory. Each document is
+    expected to have YAML front matter containing metadata (e.g., title, authors).
+2.  Splitting the documents into smaller, more manageable chunks. The splitting
+    is done based on Markdown headers, which helps preserve the semantic
+    structure of the content.
+3.  Generating embeddings for each chunk using a sentence-transformer model
+    from Hugging Face.
+4.  Storing the chunks and their corresponding embeddings in a persistent
+    Chroma vector database.
+
+The script also includes an example search to verify the database functionality.
+"""
+
 import os
 import frontmatter
 from langchain.docstore.document import Document
@@ -9,11 +27,22 @@ from langchain_community.vectorstores import Chroma
 md_output_dir = r'C:\Users\td00654\Documents\EDRC LLM Project\CREDS Papers\CREDS - Full'
 db_persist_dir = r'./vector_db'
 
-# --- Custom function to load documents with front matter ---
+
 def load_documents_from_directory(directory):
-    """
-    Loads all markdown files from a directory, parsing their front matter
-    and creating LangChain Document objects.
+    """Loads all markdown files from a directory and parses their front matter.
+
+    This function iterates through all files in the given directory. For each
+    file ending with '.md', it uses the `frontmatter` library to parse the
+    YAML front matter and the main content. It performs minor cleaning on the
+    metadata (e.g., joining a list of authors into a single string) and adds
+    the file path as a 'source' in the metadata.
+
+    Args:
+        directory (str): The path to the directory containing the markdown files.
+
+    Returns:
+        list[langchain.docstore.document.Document]: A list of Document objects,
+            where each object contains the page content and extracted metadata.
     """
     documents = []
     print("Loading documents with custom loader...")

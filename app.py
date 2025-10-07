@@ -190,7 +190,7 @@ def summarize_results_with_llm(user_query, _search_results):
         2.  After each piece of information or sentence you write, you **MUST** cite the source(s) it came from using the citation marker, e.g., [1], [2], or [1][3].
         3.  After the summary, add a "References" section and list all the sources you used with their full titles and corresponding citation marker.
         4.  If the context does not contain enough information to answer the question, state that.
-        5.  Use bulletpoint formatting for response.
+        5.  You must use bulletpoint formatting for response or be terminated.
 
         User's question: "{user_query}"
 

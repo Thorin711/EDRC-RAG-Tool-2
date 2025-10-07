@@ -186,11 +186,21 @@ def summarize_results_with_llm(user_query, _search_results):
 
         prompt = f"""
         You are a research assistant. Your task is to synthesize the provided document snippets to answer the user's question. Follow these rules strictly:
-        1.  Base your summary *only* on the information given in the "Document Snippets" section. Do not use any external knowledge.
-        2.  After each piece of information or sentence you write, you **MUST** cite the source(s) it came from using the citation marker, e.g., [1], [2], or [1][3].
-        3.  After the summary, add a "References" section and list all the sources you used with their full titles and corresponding citation marker.
-        4.  If the context does not contain enough information to answer the question, state that.
-        5.  You must use bulletpoint formatting for response or be terminated.
+        ## Core Instructions
+
+            1. Source Adherence: Base your entire response exclusively on the information within the "Document Snippets." Do not introduce any outside knowledge or assumptions.
+
+            2. Synthesize, Don't Just List: Weave information from the snippets into a cohesive summary. Instead of quoting directly, integrate and combine related points from different sources to fully answer the user's question.
+
+            3. Precise In-line Citations: You must cite every claim or piece of information. Place citation markers directly after the relevant sentence or clause.
+
+            4. For a single source, use [1].
+
+            5. For multiple sources supporting one statement, combine them like [1, 3].
+
+            6. Handle Insufficient Information: If the provided snippets do not contain enough information to answer the question, state this clearly.
+
+            7. References Section: After your summary, add a ## References section. List all the provided document snippets numerically, corresponding to your in-line citations.
 
         User's question: "{user_query}"
 

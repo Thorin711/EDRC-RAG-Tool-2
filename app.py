@@ -303,7 +303,7 @@ def main():
                 
                 if generate_summary and results and api_key_present:
                     st.info("Generating AI summary with citations...")
-                    with st.spinner("Synthesizing answer..."):
+                    with st.spinner("Thinking"):
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
                         summary = summarize_results_with_llm(user_query, results)
                         if summary:

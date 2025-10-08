@@ -1,8 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep  5 15:36:42 2025
+This module implements a Streamlit web application for searching research papers.
 
-@author: td00654
+The application serves as a retrieval-augmented generation (RAG) tool. It allows
+users to query a pre-built vector database of research documents. Key features
+include:
+- On-demand downloading and caching of vector databases from a remote source.
+- A user interface to select different databases (e.g., full corpus vs. journals).
+- AI-powered query enhancement to improve search relevance.
+- AI-powered summarization of search results with citations.
+- A clear, interactive display of search results, including document metadata
+  and content snippets.
+
+The application relies on Streamlit for the UI, LangChain for vector store
+management, Hugging Face for embedding models, and OpenAI for the LLM-powered
+features.
 """
 
 import streamlit as st
@@ -20,12 +32,24 @@ EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_full.zip"
 DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_journals.zip"
 
-# --- Helper function to download and unzip the database ---
 def download_and_unzip_db(url, dest_folder, zip_name):
-    """Downloads and unzips the vector DB if it doesn't exist."""
+    """Downloads and unzips a vector database if it's not already present.
+
+    This function checks for the existence of a destination folder. If it
+    doesn't exist, it downloads a ZIP file from the given URL, displays a
+    progress bar in the Streamlit interface, unzips the file into the
+    current directory, and then cleans up the downloaded ZIP file.
+
+    Args:
+        url (str): The URL of the database ZIP file.
+        dest_folder (str): The path to the target directory where the database
+                           should exist. This is used to check if the download
+                           is necessary.
+        zip_name (str): The filename for the downloaded ZIP file.
+    """
     if not os.path.exists(dest_folder):
         st.info(f"Database for '{os.path.basename(dest_folder)}' not found. Downloading...")
-        
+
         try:
             with requests.get(url, stream=True) as r:
                 r.raise_for_status()
@@ -33,8 +57,8 @@ def download_and_unzip_db(url, dest_folder, zip_name):
                 progress_bar = st.progress(0, text=f"Downloading {zip_name}...")
                 chunk_size = 8192
                 downloaded_size = 0
-                
-                zip_path = os.path.join(".", zip_name) # Save zip in root
+
+                zip_path = os.path.join(".", zip_name)  # Save zip in root
                 with open(zip_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         f.write(chunk)
@@ -42,15 +66,15 @@ def download_and_unzip_db(url, dest_folder, zip_name):
                         if total_size > 0:
                             progress = min(int((downloaded_size / total_size) * 100), 100)
                             progress_bar.progress(progress, text=f"Downloading {zip_name}... {progress}%")
-            
+
             progress_bar.empty()
             with st.spinner(f"Unzipping {zip_name}..."):
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall('.')
-            
-            os.remove(zip_path) # Clean up the zip file
+
+            os.remove(zip_path)  # Clean up the zip file
             st.success(f"Database '{os.path.basename(dest_folder)}' set up successfully!")
-            st.rerun() # Rerun the script to load the DB
+            st.rerun()  # Rerun the script to load the DB
         except Exception as e:
             st.error(f"Failed to download or unzip database from {url}. Error: {e}")
             st.stop()
@@ -59,20 +83,54 @@ def download_and_unzip_db(url, dest_folder, zip_name):
 # --- CACHING ---
 @st.cache_resource
 def load_embedding_model():
-    """Loads the embedding model from Hugging Face."""
+    """Loads and caches the sentence embedding model from Hugging Face.
+
+    This function initializes the `HuggingFaceEmbeddings` model specified by
+    the `EMBEDDING_MODEL_NAME` constant. The `@st.cache_resource` decorator
+    ensures the model is loaded only once and cached for subsequent runs.
+
+    Returns:
+        langchain_huggingface.HuggingFaceEmbeddings: The loaded embedding model.
+    """
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+
 
 @st.cache_resource
 def load_vector_store(_embeddings, db_dir):
-    """Loads the vector store from the specified persistent directory."""
+    """Loads and caches a persistent Chroma vector store from disk.
+
+    This function initializes a `Chroma` vector store from a specified
+    directory on disk. It uses the provided embedding function to handle
+_   queries. The `@st.cache_resource` decorator caches the loaded vector
+    store for efficiency across Streamlit app reruns.
+
+    Args:
+        _embeddings (langchain_core.embeddings.Embeddings): The embedding
+            function to use with the vector store.
+        db_dir (str): The directory path where the persistent vector store
+                      is located.
+
+    Returns:
+        langchain_chroma.Chroma: The loaded vector store instance.
+    """
     return Chroma(persist_directory=db_dir, embedding_function=_embeddings)
 
 
-# (The LLM functions 'improve_query_with_llm' and 'summarize_results_with_llm' are unchanged)
 @st.cache_data
 def improve_query_with_llm(user_query):
-    """
-    Improves the user's query using an OpenAI model for better vector search results.
+    """Improves a user's query using an LLM for better search results.
+
+    This function sends the user's query to an OpenAI model with a prompt
+    that asks it to rephrase the query for a vector database search, focusing
+    on academic keywords. The `@st.cache_data` decorator caches the result
+    to avoid repeated API calls for the same query.
+
+    Args:
+        user_query (str): The original query entered by the user.
+
+    Returns:
+        str: The enhanced query. If the API call fails, it returns the
+             original user query.
     """
     try:
         prompt = f"""
@@ -97,10 +155,25 @@ def improve_query_with_llm(user_query):
         st.warning(f"Could not improve query due to an API error: {e}. Using the original query.")
         return user_query
 
+
 @st.cache_data
 def summarize_results_with_llm(user_query, _search_results):
-    """
-    Generates a summary of the search results with citations using an OpenAI model.
+    """Generates an AI-powered summary of search results with citations.
+
+    This function constructs a detailed prompt containing the user's original
+    question and snippets from the search results. It asks an OpenAI model to
+    synthesize an answer based *only* on the provided context and to cite
+    the sources for each piece of information. The `@st.cache_data` decorator
+    caches the summary to prevent regenerating it on every app rerun.
+
+    Args:
+        user_query (str): The original query entered by the user.
+        _search_results (list[langchain.docstore.document.Document]): A list of
+            the top documents returned from the vector search.
+
+    Returns:
+        str | None: A string containing the formatted, synthesized summary with
+              references. Returns `None` if the API call fails.
     """
     try:
         context_snippets = []
@@ -113,11 +186,21 @@ def summarize_results_with_llm(user_query, _search_results):
 
         prompt = f"""
         You are a research assistant. Your task is to synthesize the provided document snippets to answer the user's question. Follow these rules strictly:
-        1.  Base your summary *only* on the information given in the "Document Snippets" section. Do not use any external knowledge.
-        2.  After each piece of information or sentence you write, you **MUST** cite the source(s) it came from using the citation marker, e.g., [1], [2], or [1][3].
-        3.  After the summary, add a "References" section and list all the sources you used with their full titles and corresponding citation marker.
-        4.  If the context does not contain enough information to answer the question, state that.
-        5.  Use bulletpoint formatting for response.
+        ## Core Instructions
+
+            1. Source Adherence: Base your entire response exclusively on the information within the "Document Snippets." Do not introduce any outside knowledge or assumptions.
+
+            2. Synthesize, Don't Just List: Weave information from the snippets into a cohesive summary. Instead of quoting directly, integrate and combine related points from different sources to fully answer the user's question.
+
+            3. Precise In-line Citations: You must cite every claim or piece of information. Place citation markers directly after the relevant sentence or clause.
+
+            4. For a single source, use [1].
+
+            5. For multiple sources supporting one statement, combine them like [1, 3].
+
+            6. Handle Insufficient Information: If the provided snippets do not contain enough information to answer the question, state this clearly.
+
+            7. References Section: After your summary, add a ## References section. List all the provided document snippets numerically, corresponding to your in-line citations.
 
         User's question: "{user_query}"
 
@@ -145,14 +228,23 @@ def summarize_results_with_llm(user_query, _search_results):
         st.error(f"Could not generate summary due to an API error: {e}")
         return None
 
-# --- MAIN APP ---
+
 def main():
+    """Defines the main function to run the Streamlit application.
+
+    This function sets up the Streamlit page configuration, handles the initial
+    database checks and downloads, and builds the user interface. The UI
+    includes a title, database selection, search form with options for the
+    number of results and AI features, and a results display area. It manages
+    the application's state and logic for handling user input and search
+    execution.
+    """
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
-    
+
     # --- Check for and download databases on startup ---
     download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
     download_and_unzip_db(DB_JOURNAL_URL, DB_JOURNAL_PATH, "vector_db_journals.zip")
-    
+
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
     
@@ -221,7 +313,7 @@ def main():
                 
                 if generate_summary and results and api_key_present:
                     st.info("Generating AI summary with citations...")
-                    with st.spinner("Synthesizing answer..."):
+                    with st.spinner("Thinking"):
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
                         summary = summarize_results_with_llm(user_query, results)
                         if summary:

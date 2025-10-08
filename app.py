@@ -184,7 +184,7 @@ def main():
         
         col1, col2, col3 = st.columns([5, 2, 3])
         with col1:
-            k_results = st.slider("Number of results to return:", min_value=1, max_value=10, value=5)
+            k_results = st.slider("Number of results to return:", min_value=1, max_value=30, value=5)
         with col2:
             use_enhanced_search = st.toggle(
                 "AI-Enhanced Search", 

@@ -215,7 +215,7 @@ def summarize_results_with_llm(user_query, _search_results):
         """
         
         response = openai.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-5-nano",
             messages=[
                 {"role": "system", "content": "You are a helpful research assistant that provides citations."},
                 {"role": "user", "content": prompt}

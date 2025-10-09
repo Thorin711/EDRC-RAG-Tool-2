@@ -189,7 +189,7 @@ def improve_query_with_llm(user_query, model="gpt-5-nano"):
                 {"role": "system", "content": "You are a helpful query optimization assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0,
+            temperature=1,
             max_completion_tokens=100
         )
         improved_query = response.choices[0].message.content.strip()

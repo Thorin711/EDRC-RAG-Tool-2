@@ -306,6 +306,12 @@ def main():
         st.session_state.search_results = None
     if 'original_query' not in st.session_state:
         st.session_state.original_query = ""
+    if 'summary_generated' not in st.session_state:
+        st.session_state.summary_generated = False
+    if 'summary_content' not in st.session_state:
+        st.session_state.summary_content = None
+    if 'summary_token_info' not in st.session_state:
+        st.session_state.summary_token_info = None
 
     # --- Check for and download databases on startup ---
     download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
@@ -375,6 +381,9 @@ def main():
         st.session_state.search_results = None
         st.session_state.final_query = ""
         st.session_state.original_query = user_query
+        st.session_state.summary_generated = False
+        st.session_state.summary_content = None
+        st.session_state.summary_token_info = None
 
         if use_enhanced_search and api_key_present:
             with st.spinner("Improving query..."):
@@ -419,27 +428,51 @@ def main():
     # --- Display Search Results ---
     if st.session_state.search_results is not None:
         results = st.session_state.search_results
-        if generate_summary and results and api_key_present:
-            with st.spinner("Thinking..."):
-                # Estimate input tokens to calculate a dynamic max_completion_tokens for the output
-                context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(st.session_state.search_results)])
-                # A more accurate estimation of the full prompt sent to the model
-                est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
-                st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
 
+        # --- AI Summary Section ---
+        # Display summary if it has already been generated
+        if st.session_state.summary_generated:
+            with st.expander("✨ **AI-Generated Summary**", expanded=True):
+                st.markdown(st.session_state.summary_content)
+            display_token_usage(st.session_state.summary_token_info, selected_model, "AI Summary")
+
+        # Show confirmation form if summary is requested but not yet generated
+        elif generate_summary and results and api_key_present:
+            with st.form("summary_confirmation_form"):
+                st.subheader("Generate AI Summary")
+                st.info("A summary will be generated based on the search results. Review the estimated cost below.")
+
+                context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(st.session_state.search_results)])
+                est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
                 dynamic_max_tokens = est_input_tokens + 1000
 
-                openai.api_key = st.secrets["OPENAI_API_KEY"]
-                summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
-                
-                if summary and token_info:
-                    with st.expander("✨ **AI-Generated Summary**", expanded=True):
-                        st.markdown(summary)
-                    display_token_usage(token_info, selected_model, "AI Summary")
-                else:
-                    st.warning("The AI summary could not be generated.")
+                # Estimate cost
+                model_pricing = MODEL_COSTS.get(selected_model, {"input": 0, "output": 0})
+                input_cost = (est_input_tokens * model_pricing.get("input", 0)) / 1_000_000
+                # Use dynamic_max_tokens for output cost estimation
+                output_cost = (dynamic_max_tokens * model_pricing.get("output", 0)) / 1_000_000
+                estimated_cost = input_cost + output_cost
 
-        st.subheader(f"Top {len(results)} Relevant Documents from {db_choice}:")
+                st.markdown(f"- **Estimated Input Tokens:** `{est_input_tokens}`")
+                st.markdown(f"- **Max Output Tokens:** `{dynamic_max_tokens}`")
+                st.markdown(f"- **Estimated Maximum Cost:** `${estimated_cost:.4f}`")
+
+                proceed_with_summary = st.form_submit_button("Generate Summary", type="primary")
+
+            if proceed_with_summary:
+                with st.spinner("Thinking..."):
+                    openai.api_key = st.secrets["OPENAI_API_KEY"]
+                    summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
+
+                    if summary and token_info:
+                        st.session_state.summary_content = summary
+                        st.session_state.summary_token_info = token_info
+                        st.session_state.summary_generated = True
+                        st.rerun()
+                    else:
+                        st.warning("The AI summary could not be generated.")
+
+        st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
         if not results:
             st.info("No relevant documents found for your query.")
         else:

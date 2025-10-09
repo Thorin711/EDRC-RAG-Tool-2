@@ -377,7 +377,7 @@ def main():
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
                 improved_query, token_info = improve_query_with_llm(user_query, model=selected_model)
-                if improved_query.lower() != user_query.lower() and token_info:
+                if token_info and improved_query and improved_query.lower() != user_query.lower():
                     st.info(f"Searching with improved query: **{improved_query}**")
                     query_to_use = improved_query
                     

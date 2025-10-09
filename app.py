@@ -33,6 +33,14 @@ EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_full.zip"
 DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_journals.zip"
 
+# Pricing per million tokens (Input, Output)
+MODEL_COSTS = {
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},  # Placeholder cost, update as needed
+    "gpt-5-mini": {"input": 0.25, "output": 2.00},
+    "gpt-5": {"input": 1.25, "output": 10.00}, # Placeholder cost, update as needed
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60}
+}
+
 def download_and_unzip_db(url, dest_folder, zip_name):
     """Downloads and unzips a vector database if it's not already present.
 
@@ -122,24 +130,36 @@ def count_tokens(text: str, model: str = "gpt-5-nano") -> int:
     """Counts the number of tokens in a text string for a given model.
     """
     try:
-        # The gpt-4o-mini model uses the same tokenizer as gpt-4o
-        encoding = tiktoken.encoding_for_model("gpt-5-nano")
+        encoding = tiktoken.encoding_for_model(model)
         return len(encoding.encode(text))
-    except Exception:
-        # Fallback for any issues with tiktoken
-        return len(text.split())
+    except KeyError:
+        # If tiktoken does not have a direct mapping for the model,
+        # we fall back to a general-purpose tokenizer.
+        st.warning(f"Tokenizer for model '{model}' not found. Using 'cl100k_base' as a fallback.")
+        encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
 
 
-def display_token_usage(input_tokens, output_tokens, total_tokens, cost, title):
+def display_token_usage(token_info, model_name, title):
     """Displays token usage and estimated cost in a Streamlit expander."""
+    input_tokens = token_info.get('input_tokens', 0)
+    output_tokens = token_info.get('output_tokens', 0)
+    total_tokens = token_info.get('total_tokens', 0)
+
+    # Calculate cost based on the selected model
+    model_pricing = MODEL_COSTS.get(model_name, {"input": 0, "output": 0})
+    input_cost_per_mil = model_pricing.get("input", 0)
+    output_cost_per_mil = model_pricing.get("output", 0)
+    cost = (input_tokens * input_cost_per_mil / 1_000_000) + (output_tokens * output_cost_per_mil / 1_000_000)
+
     with st.expander(f"Token Usage Details: {title}"):
         st.markdown(f"- **Input Tokens:** `{input_tokens}`")
         st.markdown(f"- **Output Tokens:** `{output_tokens}`")
         st.markdown(f"- **Total Tokens:** `{total_tokens}`")
-        st.markdown(f"- **Estimated Cost:** `${cost:.6f}`")
+        st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
 
 @st.cache_data
-def improve_query_with_llm(user_query):
+def improve_query_with_llm(user_query, model="gpt-5-nano"):
     """Improves a user's query using an LLM for better search results.
 
     This function sends the user's query to an OpenAI model with a prompt
@@ -149,6 +169,7 @@ def improve_query_with_llm(user_query):
 
     Args:
         user_query (str): The original query entered by the user.
+        model (str): The name of the OpenAI model to use.
 
     Returns:
         tuple[str, dict | None]: A tuple containing the enhanced query and a
@@ -163,7 +184,7 @@ def improve_query_with_llm(user_query):
         """
 
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": "You are a helpful query optimization assistant."},
                 {"role": "user", "content": prompt}
@@ -187,7 +208,7 @@ def improve_query_with_llm(user_query):
 
 
 @st.cache_data
-def summarize_results_with_llm(user_query, _search_results):
+def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano"):
     """Generates an AI-powered summary of search results with citations.
 
     This function constructs a detailed prompt containing the user's original
@@ -200,6 +221,7 @@ def summarize_results_with_llm(user_query, _search_results):
         user_query (str): The original query entered by the user.
         _search_results (list[langchain.docstore.document.Document]): A list of
             the top documents returned from the vector search.
+        model (str): The name of the OpenAI model to use.
 
     Returns:
         tuple[str | None, dict | None]: A tuple containing the summary and a
@@ -245,7 +267,7 @@ def summarize_results_with_llm(user_query, _search_results):
         """
         
         response = openai.chat.completions.create(
-            model="gpt-5-nano",
+            model=model,
             messages=[
                 {"role": "system", "content": "You are a helpful research assistant that provides citations."},
                 {"role": "user", "content": prompt}
@@ -296,6 +318,15 @@ def main():
         horizontal=True,
     )
 
+    # --- Model Selection ---
+    available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
+    selected_model = st.selectbox(
+        "Select AI Model:",
+        options=available_models,
+        index=0,  # Default to gpt-5-nano
+        help="Choose the model for query enhancement and summarization."
+    )
+
     selected_db_path = DB_FULL_PATH if db_choice == "Full Database" else DB_JOURNAL_PATH
         
     try:
@@ -341,18 +372,17 @@ def main():
             with st.spinner("Improving query..."):
                 # --- Token Estimation for Query Improvement ---
                 # This is a rough estimate; the actual prompt is slightly different.
-                est_input_tokens = count_tokens(user_query, model="gpt-4o-mini")
+                est_input_tokens = count_tokens(user_query, model=selected_model)
                 st.caption(f"Estimated input tokens for query enhancement: ~{est_input_tokens}")
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                improved_query, token_info = improve_query_with_llm(user_query)
+                improved_query, token_info = improve_query_with_llm(user_query, model=selected_model)
                 if improved_query.lower() != user_query.lower() and token_info:
                     st.info(f"Searching with improved query: **{improved_query}**")
                     query_to_use = improved_query
                     
-                    # Pricing for gpt-4o-mini as of late 2024
-                    cost = (token_info['input_tokens'] * 0.15 / 1_000_000) + (token_info['output_tokens'] * 0.60 / 1_000_000)
-                    display_token_usage(token_info['input_tokens'], token_info['output_tokens'], token_info['total_tokens'], cost, "Query Enhancement")
+                    # Display token usage and cost
+                    display_token_usage(token_info, selected_model, "Query Enhancement")
         
         with st.spinner(f"Searching `{db_choice}`..."):
             try:
@@ -362,19 +392,18 @@ def main():
                     with st.spinner("Generating AI summary..."):
                         # --- Token Estimation for Summary ---
                         context_text = " ".join([doc.page_content for doc in results])
-                        est_input_tokens = count_tokens(user_query + " " + context_text, model="gpt-5-nano")
+                        est_input_tokens = count_tokens(user_query + " " + context_text, model=selected_model)
                         st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
 
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
-                        summary, token_info = summarize_results_with_llm(user_query, results)
+                        summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model)
                         
                         if summary and token_info:
                             with st.expander("✨ **AI-Generated Summary**", expanded=True):
                                 st.markdown(summary)
                             
-                            # Pricing for gpt-4o-mini as of late 2024
-                            cost = (token_info['input_tokens'] * 0.15 / 1_000_000) + (token_info['output_tokens'] * 0.60 / 1_000_000)
-                            display_token_usage(token_info['input_tokens'], token_info['output_tokens'], token_info['total_tokens'], cost, "AI Summary")
+                            # Display token usage and cost
+                            display_token_usage(token_info, selected_model, "AI Summary")
 
                         else:
                             st.warning("The AI summary could not be generated.")

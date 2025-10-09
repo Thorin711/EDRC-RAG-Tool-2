@@ -158,7 +158,6 @@ def display_token_usage(token_info, model_name, title):
         st.markdown(f"- **Total Tokens:** `{total_tokens}`")
         st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
 
-@st.cache_data
 def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.
 
@@ -206,7 +205,6 @@ def improve_query_with_llm(user_query):
         return user_query, None
 
 
-@st.cache_data
 def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano"):
     """Generates an AI-powered summary of search results with citations.
 

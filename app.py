@@ -159,7 +159,7 @@ def display_token_usage(token_info, model_name, title):
         st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
 
 @st.cache_data
-def improve_query_with_llm(user_query, model="gpt-5-nano"):
+def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.
 
     This function sends the user's query to an OpenAI model with a prompt
@@ -169,7 +169,6 @@ def improve_query_with_llm(user_query, model="gpt-5-nano"):
 
     Args:
         user_query (str): The original query entered by the user.
-        model (str): The name of the OpenAI model to use.
 
     Returns:
         tuple[str, dict | None]: A tuple containing the enhanced query and a
@@ -184,13 +183,13 @@ def improve_query_with_llm(user_query, model="gpt-5-nano"):
         """
 
         response = openai.chat.completions.create(
-            model=model,
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful query optimization assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=1,
-            max_completion_tokens=500
+            temperature=0.2,
+            max_tokens=100
         )
         improved_query = response.choices[0].message.content.strip()
         
@@ -321,10 +320,10 @@ def main():
     # --- Model Selection ---
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
     selected_model = st.selectbox(
-        "Select AI Model:",
+        "Select AI Model for Summary:",
         options=available_models,
         index=0,  # Default to gpt-5-nano
-        help="Choose the model for query enhancement and summarization."
+        help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
     )
 
     selected_db_path = DB_FULL_PATH if db_choice == "Full Database" else DB_JOURNAL_PATH
@@ -372,15 +371,15 @@ def main():
             with st.spinner("Improving query..."):
                 # --- Token Estimation for Query Improvement ---
                 # This is a rough estimate; the actual prompt is slightly different.
-                est_input_tokens = count_tokens(user_query, model=selected_model)
+                est_input_tokens = count_tokens(user_query, model="gpt-4o-mini")
                 st.caption(f"Estimated input tokens for query enhancement: ~{est_input_tokens}")
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                improved_query, token_info = improve_query_with_llm(user_query, model=selected_model)
+                improved_query, token_info = improve_query_with_llm(user_query)
                 
                 if token_info:
                     # Display token usage regardless of the outcome
-                    display_token_usage(token_info, selected_model, "Query Enhancement")
+                    display_token_usage(token_info, "gpt-4o-mini", "Query Enhancement")
 
                     # Check if the AI returned a valid, different query
                     if improved_query and improved_query.lower() != user_query.lower():

@@ -300,6 +300,12 @@ def main():
     """
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
 
+    # --- Initialize Session State ---
+    if 'final_query' not in st.session_state:
+        st.session_state.final_query = ""
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = None
+
     # --- Check for and download databases on startup ---
     download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
     download_and_unzip_db(DB_JOURNAL_URL, DB_JOURNAL_PATH, "vector_db_journals.zip")
@@ -344,7 +350,7 @@ def main():
         
         col1, col2, col3 = st.columns([5, 2, 3])
         with col1:
-            k_results = st.slider("Number of results to return:", min_value=1, max_value=30, value=5)
+            k_results = st.slider("Number of results to return:", min_value=1, max_value=30, value=10)
         with col2:
             use_enhanced_search = st.toggle(
                 "AI-Enhanced Search", 
@@ -362,92 +368,91 @@ def main():
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
 
+    # --- Main Logic ---
     if submitted and user_query:
-        st.cache_data.clear()
-        
-        query_to_use = user_query
-        
+        # Clear previous results and reset state on new submission
+        st.session_state.search_results = None
+        st.session_state.final_query = ""
+
         if use_enhanced_search and api_key_present:
             with st.spinner("Improving query..."):
-                # --- Token Estimation for Query Improvement ---
-                # This is a rough estimate; the actual prompt is slightly different.
                 est_input_tokens = count_tokens(user_query, model="gpt-4o-mini")
                 st.caption(f"Estimated input tokens for query enhancement: ~{est_input_tokens}")
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
                 improved_query, token_info = improve_query_with_llm(user_query)
-                
+
                 if token_info:
-                    # Display token usage regardless of the outcome
                     display_token_usage(token_info, "gpt-4o-mini", "Query Enhancement")
+                    st.session_state.final_query = improved_query if improved_query else user_query
+        else:
+            # If not using enhanced search, just run the search directly
+            st.session_state.final_query = user_query
 
-                    # Check if the AI returned a valid, different query
-                    if improved_query and improved_query.lower() != user_query.lower():
-                        st.info(f"Searching with improved query: **{improved_query}**")
-                        query_to_use = improved_query
-                    else:
-                        # This handles cases where the query is unchanged or the AI returns an empty string
-                        st.info("AI analysis complete. The original query was deemed optimal.")
-                # If token_info is None, it means an API error occurred and a warning was already shown.
-        
-        with st.spinner(f"Searching `{db_choice}`..."):
-            try:
-                results = vector_store.similarity_search(query_to_use, k=k_results)
+    # --- Display Enhanced Query for Editing ---
+    if st.session_state.final_query and not st.session_state.search_results:
+        with st.form("final_search_form"):
+            st.info("Review and edit the query below, then click 'Run Search'.")
+            edited_query = st.text_area("Final Query:", value=st.session_state.final_query, height=100)
+            run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
+
+        if run_final_search:
+            query_to_use = edited_query
+            with st.spinner(f"Searching `{db_choice}` with final query..."):
+                try:
+                    st.session_state.search_results = vector_store.similarity_search(query_to_use, k=k_results)
+                except Exception as e:
+                    st.error(f"An error occurred during the search: {e}")
+            st.rerun() # Rerun to display results
+
+    # --- Display Search Results ---
+    if st.session_state.search_results is not None:
+        results = st.session_state.search_results
+        if generate_summary and results and api_key_present:
+            with st.spinner("Generating AI summary..."):
+                context_text = " ".join([doc.page_content for doc in results])
+                est_input_tokens = count_tokens(user_query + " " + context_text, model=selected_model)
+                st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
+
+                openai.api_key = st.secrets["OPENAI_API_KEY"]
+                summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model)
                 
-                if generate_summary and results and api_key_present:
-                    with st.spinner("Generating AI summary..."):
-                        # --- Token Estimation for Summary ---
-                        context_text = " ".join([doc.page_content for doc in results])
-                        est_input_tokens = count_tokens(user_query + " " + context_text, model=selected_model)
-                        st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
-
-                        openai.api_key = st.secrets["OPENAI_API_KEY"]
-                        summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model)
-                        
-                        if summary and token_info:
-                            with st.expander("✨ **AI-Generated Summary**", expanded=True):
-                                st.markdown(summary)
-                            
-                            # Display token usage and cost
-                            display_token_usage(token_info, selected_model, "AI Summary")
-
-                        else:
-                            st.warning("The AI summary could not be generated.")
-
-
-                st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
-
-                if not results:
-                    st.info("No relevant documents found for your query.")
+                if summary and token_info:
+                    with st.expander("✨ **AI-Generated Summary**", expanded=True):
+                        st.markdown(summary)
+                    display_token_usage(token_info, selected_model, "AI Summary")
                 else:
-                    for i, doc in enumerate(results):
-                        with st.container(border=True):
-                            title = doc.metadata.get('title', 'No Title Found')
-                            authors = doc.metadata.get('authors', 'No Authors Found')
-                            source = doc.metadata.get('source', 'Unknown Source')
-                            source = source.split("\\")[-1].split(".md")[0]
-                            year = doc.metadata.get('year', 'Unknown Year')
-                            doi = doc.metadata.get('doi', '')
-                            
-                            st.markdown(f"### {i+1}. {title}")
-                            
-                            headers = [doc.metadata.get(f'Header {i}') for i in range(1, 4) if doc.metadata.get(f'Header {i}')]
-                            if headers:
-                                st.markdown(f"**Section:** {' > '.join(headers)}")
+                    st.warning("The AI summary could not be generated.")
 
-                            st.markdown(f"**Authors:** {authors}")
-                            st.markdown(f"**Year:** {year}")
-                            
-                            if doi:
-                                st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
-                            
-                            with st.expander("Show content snippet"):
-                                st.write(doc.page_content)
+        st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
+        if not results:
+            st.info("No relevant documents found for your query.")
+        else:
+            for i, doc in enumerate(results):
+                with st.container(border=True):
+                    title = doc.metadata.get('title', 'No Title Found')
+                    authors = doc.metadata.get('authors', 'No Authors Found')
+                    source = doc.metadata.get('source', 'Unknown Source')
+                    source = source.split("\\")[-1].split(".md")[0]
+                    year = doc.metadata.get('year', 'Unknown Year')
+                    doi = doc.metadata.get('doi', '')
+                    
+                    st.markdown(f"### {i+1}. {title}")
+                    
+                    headers = [doc.metadata.get(f'Header {i}') for i in range(1, 4) if doc.metadata.get(f'Header {i}')]
+                    if headers:
+                        st.markdown(f"**Section:** {' > '.join(headers)}")
 
-                            st.caption(f"Source: {source}")
-                            
-            except Exception as e:
-                st.error(f"An error occurred during the search: {e}")
+                    st.markdown(f"**Authors:** {authors}")
+                    st.markdown(f"**Year:** {year}")
+                    
+                    if doi:
+                        st.markdown(f"**DOI:** {doi}")
+                    
+                    with st.expander("Show content snippet"):
+                        st.write(doc.page_content)
+
+                    st.caption(f"Source: {source}")
 
 if __name__ == "__main__":
     main()

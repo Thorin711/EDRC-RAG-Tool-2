@@ -205,7 +205,7 @@ def improve_query_with_llm(user_query):
         return user_query, None
 
 
-def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_tokens=10000):
+def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
     """Generates an AI-powered summary of search results with citations.
 
     This function constructs a detailed prompt containing the user's original
@@ -219,7 +219,7 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
         _search_results (list[langchain.docstore.document.Document]): A list of
             the top documents returned from the vector search.
         model (str): The name of the OpenAI model to use.
-        max_tokens (int): The maximum number of tokens to generate for the summary.
+        max_completion_tokens (int): The maximum number of tokens to generate for the summary.
 
     Returns:
         tuple[str | None, dict | None]: A tuple containing the summary and a
@@ -271,7 +271,7 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
                 {"role": "user", "content": prompt}
             ],
             temperature=1, 
-            max_tokens=max_tokens
+            max_completion_tokens=max_completion_tokens
         )
         summary = response.choices[0].message.content.strip()
         usage = response.usage
@@ -417,7 +417,7 @@ def main():
         results = st.session_state.search_results
         if generate_summary and results and api_key_present:
             with st.spinner("Generating AI summary..."):
-                # Estimate input tokens to calculate a dynamic max_tokens for the output
+                # Estimate input tokens to calculate a dynamic max_completion_tokens for the output
                 context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(results)])
                 # A more accurate estimation of the full prompt sent to the model
                 est_input_tokens = count_tokens(user_query + context_text, model=selected_model)
@@ -426,7 +426,7 @@ def main():
                 dynamic_max_tokens = est_input_tokens + 1000
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model, max_tokens=dynamic_max_tokens)
+                summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
                 
                 if summary and token_info:
                     with st.expander("✨ **AI-Generated Summary**", expanded=True):

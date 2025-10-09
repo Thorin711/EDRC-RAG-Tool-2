@@ -304,6 +304,8 @@ def main():
         st.session_state.final_query = ""
     if 'search_results' not in st.session_state:
         st.session_state.search_results = None
+    if 'original_query' not in st.session_state:
+        st.session_state.original_query = ""
 
     # --- Check for and download databases on startup ---
     download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
@@ -372,6 +374,7 @@ def main():
         # Clear previous results and reset state on new submission
         st.session_state.search_results = None
         st.session_state.final_query = ""
+        st.session_state.original_query = user_query
 
         if use_enhanced_search and api_key_present:
             with st.spinner("Improving query..."):
@@ -416,17 +419,17 @@ def main():
     if st.session_state.search_results is not None:
         results = st.session_state.search_results
         if generate_summary and results and api_key_present:
-            with st.spinner("Generating AI summary..."):
+            with st.spinner("Thinking..."):
                 # Estimate input tokens to calculate a dynamic max_completion_tokens for the output
-                context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(results)])
+                context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(st.session_state.search_results)])
                 # A more accurate estimation of the full prompt sent to the model
-                est_input_tokens = count_tokens(user_query + context_text, model=selected_model)
+                est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
                 st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
 
                 dynamic_max_tokens = est_input_tokens + 1000
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                summary, token_info = summarize_results_with_llm(user_query, results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
+                summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
                 
                 if summary and token_info:
                     with st.expander("✨ **AI-Generated Summary**", expanded=True):
@@ -435,7 +438,7 @@ def main():
                 else:
                     st.warning("The AI summary could not be generated.")
 
-        st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
+        st.subheader(f"Top {len(results)} Relevant Documents from {db_choice}:")
         if not results:
             st.info("No relevant documents found for your query.")
         else:

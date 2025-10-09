@@ -385,9 +385,17 @@ def main():
                 if token_info:
                     display_token_usage(token_info, "gpt-4o-mini", "Query Enhancement")
                     st.session_state.final_query = improved_query if improved_query else user_query
+                # If token_info is None, an API error occurred and a warning was already shown.
+                # The app will fall through and show the review box with the original query.
+                elif not st.session_state.final_query:
+                    st.session_state.final_query = user_query
         else:
             # If not using enhanced search, just run the search directly
-            st.session_state.final_query = user_query
+            with st.spinner(f"Searching `{db_choice}`..."):
+                try:
+                    st.session_state.search_results = vector_store.similarity_search(user_query, k=k_results)
+                except Exception as e:
+                    st.error(f"An error occurred during the search: {e}")
 
     # --- Display Enhanced Query for Editing ---
     if st.session_state.final_query and not st.session_state.search_results:

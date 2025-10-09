@@ -398,6 +398,7 @@ def main():
                     st.session_state.search_results = vector_store.similarity_search(user_query, k=k_results)
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
+            st.rerun() # Rerun to display results immediately
 
     # --- Display Enhanced Query for Editing ---
     if st.session_state.final_query and not st.session_state.search_results:

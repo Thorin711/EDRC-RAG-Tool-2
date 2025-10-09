@@ -24,6 +24,7 @@ import zipfile
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 import openai
+import tiktoken
 
 # --- CONFIGURATION ---
 DB_FULL_PATH = './vector_db_full'
@@ -117,6 +118,27 @@ _   queries. The `@st.cache_resource` decorator caches the loaded vector
 
 
 @st.cache_data
+def count_tokens(text: str, model: str = "gpt-5-nano") -> int:
+    """Counts the number of tokens in a text string for a given model.
+    """
+    try:
+        # The gpt-4o-mini model uses the same tokenizer as gpt-4o
+        encoding = tiktoken.encoding_for_model("gpt-5-nano")
+        return len(encoding.encode(text))
+    except Exception:
+        # Fallback for any issues with tiktoken
+        return len(text.split())
+
+
+def display_token_usage(input_tokens, output_tokens, total_tokens, cost, title):
+    """Displays token usage and estimated cost in a Streamlit expander."""
+    with st.expander(f"Token Usage Details: {title}"):
+        st.markdown(f"- **Input Tokens:** `{input_tokens}`")
+        st.markdown(f"- **Output Tokens:** `{output_tokens}`")
+        st.markdown(f"- **Total Tokens:** `{total_tokens}`")
+        st.markdown(f"- **Estimated Cost:** `${cost:.6f}`")
+
+@st.cache_data
 def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.
 
@@ -129,8 +151,8 @@ def improve_query_with_llm(user_query):
         user_query (str): The original query entered by the user.
 
     Returns:
-        str: The enhanced query. If the API call fails, it returns the
-             original user query.
+        tuple[str, dict | None]: A tuple containing the enhanced query and a
+        dictionary with token usage, or None if the API call fails.
     """
     try:
         prompt = f"""
@@ -150,10 +172,18 @@ def improve_query_with_llm(user_query):
             max_tokens=100
         )
         improved_query = response.choices[0].message.content.strip()
-        return improved_query.strip('"')
+        
+        usage = response.usage
+        token_info = {
+            "input_tokens": usage.prompt_tokens,
+            "output_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
+        
+        return improved_query.strip('"'), token_info
     except Exception as e:
         st.warning(f"Could not improve query due to an API error: {e}. Using the original query.")
-        return user_query
+        return user_query, None
 
 
 @st.cache_data
@@ -172,8 +202,8 @@ def summarize_results_with_llm(user_query, _search_results):
             the top documents returned from the vector search.
 
     Returns:
-        str | None: A string containing the formatted, synthesized summary with
-              references. Returns `None` if the API call fails.
+        tuple[str | None, dict | None]: A tuple containing the summary and a
+        dictionary with token usage, or None if the API call fails.
     """
     try:
         context_snippets = []
@@ -221,12 +251,20 @@ def summarize_results_with_llm(user_query, _search_results):
                 {"role": "user", "content": prompt}
             ],
             temperature=1, 
-            max_completion_tokens=5000 
+            max_completion_tokens=5000
         )
-        return response.choices[0].message.content.strip()
+        summary = response.choices[0].message.content.strip()
+        usage = response.usage
+        token_info = {
+            "input_tokens": usage.prompt_tokens,
+            "output_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
+        
+        return summary, token_info
     except Exception as e:
         st.error(f"Could not generate summary due to an API error: {e}")
-        return None
+        return None, None
 
 
 def main():
@@ -301,26 +339,46 @@ def main():
         
         if use_enhanced_search and api_key_present:
             with st.spinner("Improving query..."):
+                # --- Token Estimation for Query Improvement ---
+                # This is a rough estimate; the actual prompt is slightly different.
+                est_input_tokens = count_tokens(user_query, model="gpt-4o-mini")
+                st.caption(f"Estimated input tokens for query enhancement: ~{est_input_tokens}")
+
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                improved_query = improve_query_with_llm(user_query)
-                if improved_query.lower() != user_query.lower():
+                improved_query, token_info = improve_query_with_llm(user_query)
+                if improved_query.lower() != user_query.lower() and token_info:
                     st.info(f"Searching with improved query: **{improved_query}**")
                     query_to_use = improved_query
+                    
+                    # Pricing for gpt-4o-mini as of late 2024
+                    cost = (token_info['input_tokens'] * 0.15 / 1_000_000) + (token_info['output_tokens'] * 0.60 / 1_000_000)
+                    display_token_usage(token_info['input_tokens'], token_info['output_tokens'], token_info['total_tokens'], cost, "Query Enhancement")
         
         with st.spinner(f"Searching `{db_choice}`..."):
             try:
                 results = vector_store.similarity_search(query_to_use, k=k_results)
                 
                 if generate_summary and results and api_key_present:
-                    st.info("Generating AI summary with citations...")
-                    with st.spinner("Thinking"):
+                    with st.spinner("Generating AI summary..."):
+                        # --- Token Estimation for Summary ---
+                        context_text = " ".join([doc.page_content for doc in results])
+                        est_input_tokens = count_tokens(user_query + " " + context_text, model="gpt-5-nano")
+                        st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
+
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
-                        summary = summarize_results_with_llm(user_query, results)
-                        if summary:
+                        summary, token_info = summarize_results_with_llm(user_query, results)
+                        
+                        if summary and token_info:
                             with st.expander("✨ **AI-Generated Summary**", expanded=True):
                                 st.markdown(summary)
+                            
+                            # Pricing for gpt-4o-mini as of late 2024
+                            cost = (token_info['input_tokens'] * 0.15 / 1_000_000) + (token_info['output_tokens'] * 0.60 / 1_000_000)
+                            display_token_usage(token_info['input_tokens'], token_info['output_tokens'], token_info['total_tokens'], cost, "AI Summary")
+
                         else:
                             st.warning("The AI summary could not be generated.")
+
 
                 st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
 
@@ -358,4 +416,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

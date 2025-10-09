@@ -404,7 +404,7 @@ def main():
     if st.session_state.final_query and not st.session_state.search_results:
         with st.form("final_search_form"):
             st.info("Review and edit the query below, then click 'Run Search'.")
-            edited_query = st.text_area("Final Query:", value=st.session_state.final_query, height=100)
+            edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
             run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
 
         if run_final_search:

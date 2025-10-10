@@ -481,7 +481,9 @@ def main():
                     title = doc.metadata.get('title', 'No Title Found')
                     authors = doc.metadata.get('authors', 'No Authors Found')
                     source_path = doc.metadata.get('source', 'Unknown Source')
-                    source = os.path.splitext(os.path.basename(source_path))[0]
+                    # Get the base filename and remove the .md extension.
+                    base_name = os.path.basename(source_path)
+                    source = base_name.removesuffix('.md')
                     year = doc.metadata.get('year', 'Unknown Year')
                     doi = doc.metadata.get('doi', '')
                     

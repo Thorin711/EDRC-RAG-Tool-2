@@ -472,7 +472,7 @@ def main():
                     else:
                         st.warning("The AI summary could not be generated.")
 
-        st.subheader(f"Top {len(results)} Relevant Documents from `{db_choice}`:")
+        st.subheader(f"Top {len(results)} Relevant Documents from {db_choice}:")
         if not results:
             st.info("No relevant documents found for your query.")
         else:
@@ -480,8 +480,8 @@ def main():
                 with st.container(border=True):
                     title = doc.metadata.get('title', 'No Title Found')
                     authors = doc.metadata.get('authors', 'No Authors Found')
-                    source = doc.metadata.get('source', 'Unknown Source')
-                    source = source.split("\\")[-1].split(".md")[0]
+                    source_path = doc.metadata.get('source', 'Unknown Source')
+                    source = os.path.splitext(os.path.basename(source_path))[0]
                     year = doc.metadata.get('year', 'Unknown Year')
                     doi = doc.metadata.get('doi', '')
                     

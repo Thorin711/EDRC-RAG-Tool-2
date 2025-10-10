@@ -426,7 +426,7 @@ def main():
                 # A more accurate estimation of the full prompt sent to the model
                 est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
                 # Provide a reasonable estimate for the output. This is a heuristic.
-                est_output_tokens = 800 
+                est_output_tokens = est_input_tokens + 1000
                 st.caption(f"Estimated input tokens for summary: ~{est_input_tokens}")
                 st.caption(f"Estimated output tokens for summary: ~{est_output_tokens}")
 

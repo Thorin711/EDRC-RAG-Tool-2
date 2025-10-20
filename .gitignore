@@ -25,6 +25,4 @@ vector_db_journals/
 
 # Streamlit secrets
 .streamlit/
-
-# Gemini-specific files
 gemini.md

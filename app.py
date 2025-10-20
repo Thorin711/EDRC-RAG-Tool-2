@@ -360,8 +360,8 @@ def main():
             k_results = st.slider("Number of results to return:", min_value=1, max_value=30, value=10)
         with col2:
             use_enhanced_search = st.toggle(
-                "AI-Enhanced Search", 
-                value=True, 
+                "AI-Enhanced Search",
+                value=True,
                 help="Uses an AI model to rephrase your query.",
                 disabled=not api_key_present
             )
@@ -372,6 +372,15 @@ def main():
                 help="Uses an AI model to summarize the search results.",
                 disabled=not api_key_present
             )
+
+        # --- Date Range Selection ---
+        date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
+        with date_col1:
+            start_date = st.number_input("Start Year", min_value=1900, max_value=2100, value=1900, step=1)
+        with date_col2:
+            end_date = st.number_input("End Year", min_value=1900, max_value=2100, value=2024, step=1)
+        with date_col3:
+            use_date_filter = st.checkbox("Filter by year", value=False)
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
 
@@ -404,7 +413,16 @@ def main():
             # If not using enhanced search, just run the search directly
             with st.spinner(f"Searching `{db_choice}`..."):
                 try:
-                    st.session_state.search_results = vector_store.similarity_search(user_query, k=k_results)
+                    # Fetch more results if filtering by date to ensure enough results are returned.
+                    fetch_k = k_results * 3 if use_date_filter else k_results
+                    
+                    results = vector_store.similarity_search(user_query, k=fetch_k)
+                    
+                    if use_date_filter:
+                        results = [doc for doc in results if start_date <= int(doc.metadata.get('year', 0)) <= end_date]
+                    
+                    st.session_state.search_results = results[:k_results]
+
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results immediately

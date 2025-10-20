@@ -376,7 +376,7 @@ def main():
         # --- Date Range Selection ---
         date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
         with date_col1:
-            start_date = st.number_input("Start Year", min_value=1900, max_value=2100, value=1900, step=1)
+            start_date = st.number_input("Start Year", min_value=1900, max_value=2100, value=2015, step=1)
         with date_col2:
             end_date = st.number_input("End Year", min_value=1900, max_value=2100, value=2024, step=1)
         with date_col3:

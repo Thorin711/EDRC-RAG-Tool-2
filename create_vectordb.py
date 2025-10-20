@@ -24,7 +24,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 # --- 1. DEFINE PATHS ---
-md_output_dir = r'C:\Users\td00654\Documents\EDRC LLM Project\CREDS Papers\CREDS - Full'
+md_output_dir = r'INPUT_FOLDER_PATH'
 db_persist_dir = r'./vector_db'
 
 

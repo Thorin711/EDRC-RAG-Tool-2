@@ -28,9 +28,11 @@ import openai
 # --- CONFIGURATION ---
 DB_FULL_PATH = './vector_db_full'
 DB_JOURNAL_PATH = './vector_db_journals'
+DB_EDRC_PATH = './vector_db_EDRC'
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_full.zip"
 DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_journals.zip"
+DB_EDRC_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.3/vector_db_EDRC.zip"
 
 def download_and_unzip_db(url, dest_folder, zip_name):
     """Downloads and unzips a vector database if it's not already present.
@@ -244,6 +246,7 @@ def main():
     # --- Check for and download databases on startup ---
     download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
     download_and_unzip_db(DB_JOURNAL_URL, DB_JOURNAL_PATH, "vector_db_journals.zip")
+    download_and_unzip_db(DB_EDRC_URL, DB_EDRC_PATH, "vector_db_journals.zip")
 
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
@@ -252,14 +255,20 @@ def main():
     if not api_key_present:
         st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
 
+    # Define database options in a dictionary for scalability
+    DB_OPTIONS = {
+        "Full Database": DB_FULL_PATH,
+        "Journal Articles Only": DB_JOURNAL_PATH,
+        "EDRC Only": DB_EDRC_PATH,
+    }
+
     db_choice = st.radio(
         "Select database to search:",
-        ("Full Database", "Journal Articles Only"),
+        options=DB_OPTIONS.keys(),
         horizontal=True,
     )
 
-    selected_db_path = DB_FULL_PATH if db_choice == "Full Database" else DB_JOURNAL_PATH
-        
+    selected_db_path = DB_OPTIONS[db_choice]
     try:
         embeddings = load_embedding_model()
         vector_store = load_vector_store(embeddings, selected_db_path)
@@ -358,4 +367,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

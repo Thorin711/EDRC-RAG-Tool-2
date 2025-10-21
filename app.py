@@ -405,8 +405,6 @@ def main():
 
         if use_enhanced_search and api_key_present:
             with st.spinner("Improving query..."):
-                est_input_tokens = count_tokens(user_query, model="gpt-4o-mini")
-                st.caption(f"Estimated input tokens for query enhancement: ~{est_input_tokens}")
 
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
                 improved_query, token_info = improve_query_with_llm(user_query)

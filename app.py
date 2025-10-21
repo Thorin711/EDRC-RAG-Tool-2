@@ -153,12 +153,14 @@ def display_token_usage(token_info, model_name, title):
     input_cost_per_mil = model_pricing.get("input", 0)
     output_cost_per_mil = model_pricing.get("output", 0)
     cost = (input_tokens * input_cost_per_mil / 1_000_000) + (output_tokens * output_cost_per_mil / 1_000_000)
+    co2 = output_tokens * 0.159/50 # CO2 in g per token x tokens
 
     with st.expander(f"Token Usage Details: {title}"):
         st.markdown(f"- **Input Tokens:** `{input_tokens}`")
         st.markdown(f"- **Output Tokens:** `{output_tokens}`")
         st.markdown(f"- **Total Tokens:** `{total_tokens}`")
         st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
+        st.markdown(f"- **Estimated CO2:** `{co2:.2f} g`")
 
 def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.

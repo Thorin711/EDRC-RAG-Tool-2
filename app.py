@@ -340,9 +340,7 @@ def main():
         horizontal=True,
     )
 
-<<<<<<< HEAD
     selected_db_path = DB_OPTIONS[db_choice]
-=======
     # --- Model Selection ---
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
     selected_model = st.selectbox(
@@ -352,9 +350,6 @@ def main():
         help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
     )
 
-    selected_db_path = DB_FULL_PATH if db_choice == "Full Database" else DB_JOURNAL_PATH
-        
->>>>>>> 26ef6d2c1ddea9c1b0bd5deb35eac90cc9f72630
     try:
         embeddings = load_embedding_model()
         vector_store = load_vector_store(embeddings, selected_db_path)

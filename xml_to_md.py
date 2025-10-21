@@ -164,8 +164,8 @@ def xml_to_markdown(xml_file_path, output_dir):
 
 # --- Example Usage ---
 if __name__ == '__main__':
-    input_dir = r"C:\Users\td00654\Documents\EDRC LLM Project\CREDS Papers\CREDS - HTML"
-    output_dir = r'C:\Users\td00654\Documents\EDRC LLM Project\CREDS Papers\CREDS - Full'
+    input_dir = r"C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM Project\Papers\EDRC - XML"
+    output_dir = r'C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM Project\Papers\EDRC - Text'
     
     for filename in os.listdir(input_dir):
         if filename.endswith('.xml'):

@@ -485,7 +485,7 @@ def main():
                 st.markdown(f"- **Estimated Input Tokens:** `{est_input_tokens}`")
                 st.markdown(f"- **Max Output Tokens:** `{dynamic_max_tokens}`")
                 st.markdown(f"- **Estimated Maximum Cost:** `${estimated_cost:.4f}`")
-                st.markdown(f"- **Estimated Maximum CO2:** `${est_co2:.2f}` g")
+                st.markdown(f"- **Estimated Maximum CO2:** `{est_co2:.2f}` g")
 
                 proceed_with_summary = st.form_submit_button("Generate Summary", type="primary")
 

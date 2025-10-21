@@ -254,7 +254,9 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
 
             6. Handle Insufficient Information: If the provided snippets do not contain enough information to answer the question, state this clearly.
 
-            7. References Section: After your summary, add a ## References section. List all the provided document snippets numerically, corresponding to your in-line citations.
+            7. You must use bullet point formatting for the output.
+
+            8. References Section: After your summary, add a ## References section. List all the provided document snippets numerically in bullet point order, corresponding to your in-line citations.
 
         User's question: "{user_query}"
 

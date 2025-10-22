@@ -56,7 +56,12 @@ def load_documents_from_directory(directory):
                 post.metadata['authors'] = ", ".join(post.metadata['authors'])
 
             if 'year' in post.metadata and post.metadata['year'] is not None:
-                post.metadata['year'] = str(post.metadata['year'])
+                try:
+                    # Convert year to an integer for numerical filtering in Qdrant
+                    post.metadata['year'] = int(post.metadata['year'])
+                except ValueError:
+                    print(f"Warning: Could not convert year '{post.metadata['year']}' to integer for document '{filepath}'. Removing 'year' metadata for this document to prevent filtering issues.")
+                    del post.metadata['year'] # Remove the year if it's not a valid integer
             
             post.metadata['source'] = filepath
             doc = Document(page_content=post.content, metadata=post.metadata)

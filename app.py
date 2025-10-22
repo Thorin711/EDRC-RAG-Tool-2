@@ -292,9 +292,8 @@ def main():
         st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
     if not qdrant_api_key:
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect to database.", icon="🚨")
-        st.stop()    if not api_key_present:
-        st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
-
+        st.stop()    
+        
 # Define database options (using Qdrant collection names from Step 3)
     DB_OPTIONS = {
         "Full Database": COLLECTION_FULL,

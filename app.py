@@ -93,11 +93,11 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
         # --- ADD THESE LINES ---
         # Replace "your_content_field" with the *exact* name of the
         # payload field in Qdrant that holds the document text.
-        content_payload_key="meta", 
+        content_payload_key="metadata", 
 
         # Replace "your_metadata_field" with the *exact* name of the
         # payload field that holds the metadata dictionary.
-        metadata_payload_key="text"
+        metadata_payload_key="page_content"
         # -------------------------
     )
 

@@ -21,6 +21,7 @@ import streamlit as st
 import os
 from langchain_qdrant import Qdrant
 from qdrant_client.http.models import FieldCondition, Range
+from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
 
@@ -267,7 +268,7 @@ def main():
 
     # --- Initialize Session State ---
     if 'final_query' not in st.session_state:
-        st.session_state.final_query = ""
+        st.session_state.final_query = ""HuggingFaceEmbeddings
     if 'search_results' not in st.session_state:
         st.session_state.search_results = None
     if 'original_query' not in st.session_state:

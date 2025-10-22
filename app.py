@@ -89,7 +89,6 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
         collection_name=_collection_name,
         url=_url,
         api_key=_api_key,
-        with_payload=True,  # Ensure payload (content & metadata) is retrieved
 
         # --- ADD THESE LINES ---
         # Replace "your_content_field" with the *exact* name of the

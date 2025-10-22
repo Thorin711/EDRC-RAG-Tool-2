@@ -37,7 +37,7 @@ QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud
 # You must replace these with the *exact* names of your collections in Qdrant
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
-COLLECTION_EDRC = "edrc_papers"
+COLLECTION_EDRC = "EDRC_papers"
 
 # Pricing per million tokens (Input, Output)
 MODEL_COSTS = {
@@ -64,6 +64,7 @@ def load_embedding_model():
 
 
 @st.cache_resource
+@st.cache_resource
 def load_vector_store(_embeddings, _collection_name, _url, _api_key):
     """Loads and caches a Qdrant vector store from the cloud.
 
@@ -80,12 +81,25 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
     Returns:
         langchain_qdrant.Qdrant: The loaded vector store instance.
     """
+
+    # --- MODIFY THIS FUNCTION CALL ---
+
     return Qdrant.from_existing_collection(
         embedding=_embeddings,
         collection_name=_collection_name,
         url=_url,
         api_key=_api_key,
         with_payload=True,  # Ensure payload (content & metadata) is retrieved
+
+        # --- ADD THESE LINES ---
+        # Replace "your_content_field" with the *exact* name of the
+        # payload field in Qdrant that holds the document text.
+        content_payload_key="meta", 
+
+        # Replace "your_metadata_field" with the *exact* name of the
+        # payload field that holds the metadata dictionary.
+        metadata_payload_key="text"
+        # -------------------------
     )
 
 
@@ -449,6 +463,25 @@ def main():
             st.rerun() # Rerun to display results
 
     # --- Display Search Results ---
+    # --- Display Search Results ---
+    if st.session_state.search_results is not None:
+        results = st.session_state.search_results
+
+        # ---!! ADD THIS FOR DEBUGGING !! ---
+        # Print the first result's payload to the app to check its structure
+        if results:
+            st.subheader("DEBUG: Payload of First Result")
+            st.markdown("This is the `page_content` (should be the text):")
+            st.text(results[0].page_content)
+            
+            st.markdown("This is the `metadata` (should be a dictionary):")
+            st.json(results[0].metadata)
+        # ---!! END DEBUG BLOCK !! ---
+
+        # --- AI Summary Section ---
+        # Display summary if it has already been generated
+        if st.session_state.summary_generated:
+            # ... (rest of the code) ...
     if st.session_state.search_results is not None:
         results = st.session_state.search_results
 

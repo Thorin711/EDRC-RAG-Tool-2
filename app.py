@@ -26,7 +26,6 @@ import openai
 import tiktoken
 
 # --- CONFIGURATION ---
-# --- CONFIGURATION ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
 # --- QDRANT CONFIG ---
@@ -37,7 +36,7 @@ QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud
 # You must replace these with the *exact* names of your collections in Qdrant
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
-COLLECTION_EDRC = "EDRC_papers"
+COLLECTION_EDRC = "edrc_papers" # Corrected name to match migrator script
 
 # Pricing per million tokens (Input, Output)
 MODEL_COSTS = {
@@ -64,7 +63,6 @@ def load_embedding_model():
 
 
 @st.cache_resource
-@st.cache_resource
 def load_vector_store(_embeddings, _collection_name, _url, _api_key):
     """Loads and caches a Qdrant vector store from the cloud.
 
@@ -82,7 +80,9 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
         langchain_qdrant.Qdrant: The loaded vector store instance.
     """
 
-    # --- MODIFY THIS FUNCTION CALL ---
+    # --- START: MODIFIED SECTION ---
+    # These keys must match the payload structure from your migrator script
+    # {"page_content": "...", "metadata": {...}}
 
     return Qdrant.from_existing_collection(
         embedding=_embeddings,
@@ -90,16 +90,13 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
         url=_url,
         api_key=_api_key,
 
-        # --- ADD THESE LINES ---
-        # Replace "your_content_field" with the *exact* name of the
-        # payload field in Qdrant that holds the document text.
-        content_payload_key="metadata", 
+        # The key holding the main text
+        content_payload_key="page_content", 
 
-        # Replace "your_metadata_field" with the *exact* name of the
-        # payload field that holds the metadata dictionary.
-        metadata_payload_key="page_content"
-        # -------------------------
+        # The key holding the nested metadata dictionary
+        metadata_payload_key="metadata"
     )
+    # --- END: MODIFIED SECTION ---
 
 
 @st.cache_data
@@ -309,7 +306,7 @@ def main():
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect to database.", icon="🚨")
         st.stop()    
         
-# Define database options (using Qdrant collection names from Step 3)
+    # Define database options (using Qdrant collection names)
     DB_OPTIONS = {
         "Full Database": COLLECTION_FULL,
         "Journal Articles Only": COLLECTION_JOURNAL,
@@ -417,15 +414,19 @@ def main():
                 try:
                     # Build search arguments
                     search_kwargs = {"k": k_results}
+                    
+                    # --- START: MODIFIED SECTION (DATE FILTER 1) ---
                     if use_date_filter:
                         search_kwargs["filter"] = {
                             "must": [
                                 FieldCondition(
-                                    key="year", # Assumes your metadata field is named 'year'
+                                    # Use "metadata.year" to access the nested key
+                                    key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         }
+                    # --- END: MODIFIED SECTION (DATE FILTER 1) ---
                     
                     results = vector_store.similarity_search(user_query, **search_kwargs)
                     st.session_state.search_results = results
@@ -446,15 +447,19 @@ def main():
                 try:
                     # Build search arguments
                     search_kwargs = {"k": k_results}
+                    
+                    # --- START: MODIFIED SECTION (DATE FILTER 2) ---
                     if use_date_filter:
                         search_kwargs["filter"] = {
                             "must": [
                                 FieldCondition(
-                                    key="year", # Assumes your metadata field is named 'year'
+                                    # Use "metadata.year" to access the nested key
+                                    key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         }
+                    # --- END: MODIFIED SECTION (DATE FILTER 2) ---
 
                     st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                 except Exception as e:
@@ -501,7 +506,7 @@ def main():
             if proceed_with_summary:
                 with st.spinner("Thinking..."):
                     openai.api_key = st.secrets["OPENAI_API_KEY"]
-                    summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
+                    summary, token_info = summarize_results_with_llm(st.session_state.original__query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
 
                     if summary and token_info:
                         st.session_state.summary_content = summary
@@ -517,6 +522,7 @@ def main():
         else:
             for i, doc in enumerate(results):
                 with st.container(border=True):
+                    # --- Access metadata correctly ---
                     title = doc.metadata.get('title', 'No Title Found')
                     authors = doc.metadata.get('authors', 'No Authors Found')
                     source_path = doc.metadata.get('source', 'Unknown Source')
@@ -539,7 +545,9 @@ def main():
                         st.markdown(f"**DOI:** {doi}")
                     
                     with st.expander("Show content snippet"):
-                        st.write(doc.page_content)
+                        # 'doc.page_content' is correct because we set
+                        # content_payload_key="page_content"
+                        st.write(doc.page_content) 
 
                     st.caption(f"Source: {source}")
 

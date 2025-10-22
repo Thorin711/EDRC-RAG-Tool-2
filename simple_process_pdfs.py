@@ -21,4 +21,3 @@ in_path = r"C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM 
 out_path = r"C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM Project\Papers\EDRC - XML"
 # Process documents
 client.process("processFulltextDocument", in_path, out_path, n=10)
-

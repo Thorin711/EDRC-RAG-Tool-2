@@ -19,21 +19,24 @@ features.
 
 import streamlit as st
 import os
-import requests
-import zipfile
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_qdrant import Qdrant
+from qdrant_client.http.models import FieldCondition, Range
 import openai
 import tiktoken
 
 # --- CONFIGURATION ---
-DB_FULL_PATH = './vector_db_full'
-DB_JOURNAL_PATH = './vector_db_journals'
-DB_EDRC_PATH = './vector_db_EDRC'
+# --- CONFIGURATION ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-DB_FULL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_full.zip"
-DB_JOURNAL_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.2/vector_db_journals.zip"
-DB_EDRC_URL = "https://github.com/Thorin711/EDRC-RAG-Tool-2/releases/download/v0.3/vector_db_EDRC.zip"
+
+# --- QDRANT CONFIG ---
+# URL from your Qdrant Cloud dashboard
+QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
+
+# --- !! IMPORTANT !! ---
+# You must replace these with the *exact* names of your collections in Qdrant
+COLLECTION_FULL = "full_papers" 
+COLLECTION_JOURNAL = "journal_papers" 
+COLLECTION_EDRC = "edrc_papers"
 
 # Pricing per million tokens (Input, Output)
 MODEL_COSTS = {
@@ -42,53 +45,6 @@ MODEL_COSTS = {
     "gpt-5": {"input": 1.25, "output": 10.00}, # Placeholder cost, update as needed
     "gpt-4o-mini": {"input": 0.15, "output": 0.60}
 }
-
-def download_and_unzip_db(url, dest_folder, zip_name):
-    """Downloads and unzips a vector database if it's not already present.
-
-    This function checks for the existence of a destination folder. If it
-    doesn't exist, it downloads a ZIP file from the given URL, displays a
-    progress bar in the Streamlit interface, unzips the file into the
-    current directory, and then cleans up the downloaded ZIP file.
-
-    Args:
-        url (str): The URL of the database ZIP file.
-        dest_folder (str): The path to the target directory where the database
-                           should exist. This is used to check if the download
-                           is necessary.
-        zip_name (str): The filename for the downloaded ZIP file.
-    """
-    if not os.path.exists(dest_folder):
-        st.info(f"Database for '{os.path.basename(dest_folder)}' not found. Downloading...")
-
-        try:
-            with requests.get(url, stream=True) as r:
-                r.raise_for_status()
-                total_size = int(r.headers.get('content-length', 0))
-                progress_bar = st.progress(0, text=f"Downloading {zip_name}...")
-                chunk_size = 8192
-                downloaded_size = 0
-
-                zip_path = os.path.join(".", zip_name)  # Save zip in root
-                with open(zip_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        if total_size > 0:
-                            progress = min(int((downloaded_size / total_size) * 100), 100)
-                            progress_bar.progress(progress, text=f"Downloading {zip_name}... {progress}%")
-
-            progress_bar.empty()
-            with st.spinner(f"Unzipping {zip_name}..."):
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall('.')
-
-            os.remove(zip_path)  # Clean up the zip file
-            st.success(f"Database '{os.path.basename(dest_folder)}' set up successfully!")
-            st.rerun()  # Rerun the script to load the DB
-        except Exception as e:
-            st.error(f"Failed to download or unzip database from {url}. Error: {e}")
-            st.stop()
 
 
 # --- CACHING ---
@@ -107,24 +63,28 @@ def load_embedding_model():
 
 
 @st.cache_resource
-def load_vector_store(_embeddings, db_dir):
-    """Loads and caches a persistent Chroma vector store from disk.
+def load_vector_store(_embeddings, _collection_name, _url, _api_key):
+    """Loads and caches a Qdrant vector store from the cloud.
 
-    This function initializes a `Chroma` vector store from a specified
-    directory on disk. It uses the provided embedding function to handle
-_   queries. The `@st.cache_resource` decorator caches the loaded vector
-    store for efficiency across Streamlit app reruns.
+    This function initializes a Qdrant vector store by connecting to
+    an existing collection in Qdrant Cloud.
 
     Args:
         _embeddings (langchain_core.embeddings.Embeddings): The embedding
             function to use with the vector store.
-        db_dir (str): The directory path where the persistent vector store
-                      is located.
+        _collection_name (str): The name of the collection in Qdrant.
+        _url (str): The URL of the Qdrant Cloud instance.
+        _api_key (str): The API key for the Qdrant Cloud instance.
 
     Returns:
-        langchain_chroma.Chroma: The loaded vector store instance.
+        langchain_qdrant.Qdrant: The loaded vector store instance.
     """
-    return Chroma(persist_directory=db_dir, embedding_function=_embeddings)
+    return Qdrant.from_existing_collection(
+        embedding=_embeddings,
+        collection_name=_collection_name,
+        url=_url,
+        api_key=_api_key,
+    )
 
 
 @st.cache_data
@@ -319,23 +279,27 @@ def main():
     if 'summary_token_info' not in st.session_state:
         st.session_state.summary_token_info = None
 
-    # --- Check for and download databases on startup ---
-    download_and_unzip_db(DB_FULL_URL, DB_FULL_PATH, "vector_db_full.zip")
-    download_and_unzip_db(DB_JOURNAL_URL, DB_JOURNAL_PATH, "vector_db_journals.zip")
-    download_and_unzip_db(DB_EDRC_URL, DB_EDRC_PATH, "vector_db_journals.zip")
-
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
     
-    api_key_present = "OPENAI_API_KEY" in st.secrets
-    if not api_key_present:
+    # Check for API keys
+    openai_api_key = st.secrets.get("OPENAI_API_KEY")
+    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
+    
+    api_key_present = bool(openai_api_key) # For disabling AI features
+
+    if not openai_api_key:
+        st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
+    if not qdrant_api_key:
+        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect to database.", icon="🚨")
+        st.stop()    if not api_key_present:
         st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
 
-    # Define database options in a dictionary for scalability
+# Define database options (using Qdrant collection names from Step 3)
     DB_OPTIONS = {
-        "Full Database": DB_FULL_PATH,
-        "Journal Articles Only": DB_JOURNAL_PATH,
-        "EDRC Only": DB_EDRC_PATH,
+        "Full Database": COLLECTION_FULL,
+        "Journal Articles Only": COLLECTION_JOURNAL,
+        "EDRC Only": COLLECTION_EDRC,
     }
 
     db_choice = st.radio(
@@ -343,8 +307,9 @@ def main():
         options=DB_OPTIONS.keys(),
         horizontal=True,
     )
+    
+    selected_collection_name = DB_OPTIONS[db_choice]
 
-    selected_db_path = DB_OPTIONS[db_choice]
     # --- Model Selection ---
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
     selected_model = st.selectbox(
@@ -356,8 +321,20 @@ def main():
 
     try:
         embeddings = load_embedding_model()
-        vector_store = load_vector_store(embeddings, selected_db_path)
-        st.caption(f"ℹ️ `{db_choice}` loaded with {vector_store._collection.count()} documents.")
+        vector_store = load_vector_store(
+            embeddings, 
+            selected_collection_name, 
+            QDRANT_URL, 
+            qdrant_api_key
+        )
+        
+        # Count documents using the Qdrant client
+        count_result = vector_store.client.count(
+            collection_name=selected_collection_name, 
+            exact=True
+        )
+        st.caption(f"ℹ️ `{db_choice}` loaded with {count_result.count} documents.")
+        
     except Exception as e:
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
@@ -424,16 +401,20 @@ def main():
             # If not using enhanced search, just run the search directly
             with st.spinner(f"Searching `{db_choice}`..."):
                 try:
-                    # Fetch more results if filtering by date to ensure enough results are returned.
-                    fetch_k = k_results * 3 if use_date_filter else k_results
-                    
-                    results = vector_store.similarity_search(user_query, k=fetch_k)
-                    
+                    # Build search arguments
+                    search_kwargs = {"k": k_results}
                     if use_date_filter:
-                        results = [doc for doc in results if start_date <= int(doc.metadata.get('year', 0)) <= end_date]
+                        search_kwargs["filter"] = {
+                            "must": [
+                                FieldCondition(
+                                    key="year", # Assumes your metadata field is named 'year'
+                                    range=Range(gte=start_date, lte=end_date)
+                                )
+                            ]
+                        }
                     
-                    st.session_state.search_results = results[:k_results]
-
+                    results = vector_store.similarity_search(user_query, **search_kwargs)
+                    st.session_state.search_results = results
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results immediately
@@ -449,7 +430,19 @@ def main():
             query_to_use = edited_query
             with st.spinner(f"Searching `{db_choice}` with final query..."):
                 try:
-                    st.session_state.search_results = vector_store.similarity_search(query_to_use, k=k_results)
+                    # Build search arguments
+                    search_kwargs = {"k": k_results}
+                    if use_date_filter:
+                        search_kwargs["filter"] = {
+                            "must": [
+                                FieldCondition(
+                                    key="year", # Assumes your metadata field is named 'year'
+                                    range=Range(gte=start_date, lte=end_date)
+                                )
+                            ]
+                        }
+
+                    st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results

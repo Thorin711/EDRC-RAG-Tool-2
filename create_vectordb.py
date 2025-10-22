@@ -24,13 +24,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 # --- 1. DEFINE PATHS ---
-<<<<<<< HEAD
-md_output_dir = r'C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM Project\Papers\EDRC - Text'
-db_persist_dir = r'C:\Users\td00654\OneDrive - University of Surrey\Documents\EDRC LLM Project\Papers\EDRC - Text\vector_db_EDRC'
-=======
+
 md_output_dir = r'INPUT_FOLDER_PATH'
 db_persist_dir = r'./vector_db'
->>>>>>> 26ef6d2c1ddea9c1b0bd5deb35eac90cc9f72630
 
 
 def load_documents_from_directory(directory):

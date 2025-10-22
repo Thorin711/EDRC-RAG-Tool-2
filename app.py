@@ -268,7 +268,7 @@ def main():
 
     # --- Initialize Session State ---
     if 'final_query' not in st.session_state:
-        st.session_state.final_query = ""HuggingFaceEmbeddings
+        st.session_state.final_query = ""
     if 'search_results' not in st.session_state:
         st.session_state.search_results = None
     if 'original_query' not in st.session_state:

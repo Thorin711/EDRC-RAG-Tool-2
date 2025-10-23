@@ -147,22 +147,22 @@ def admin_app():
         st.markdown(f"**Content Snippet:**\n```\n{doc.page_content[:250]}...\n```")
 
         with st.form("edit_form"):
-            st.text_input("Title", ...)
-            st.text_input("Authors", ...)
-
-            # This button is INSIDE the form block, which is correct
-            submitted = st.form_submit_button("Save Changes")
+            st.subheader("Update Fields")
             
-            # Create form fields, pre-filled with current values
+            # --- FIX: THIS LINE MUST COME FIRST ---
+            # Get current metadata
+            current_meta = doc.metadata.copy()
+            
+            # --- THEN, CREATE THE FORM FIELDS ---
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
             new_year = st.number_input("Year", min_value=1900, max_value=2100, step=1, value=current_meta.get('year', 2024))
             new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
             
-            # You could add any other metadata fields here
-            
+            # --- THEN, CREATE THE SUBMIT BUTTON ---
             submitted = st.form_submit_button("Save Changes to Database", type="primary")
 
+            # --- FINALLY, HANDLE THE SUBMISSION ---
             if submitted:
                 if not point_id:
                     st.error("Error: Point ID is missing. Cannot update.")
@@ -170,7 +170,6 @@ def admin_app():
                     with st.spinner("Saving changes..."):
                         try:
                             # 1. Create the new metadata dictionary
-                            # We start with the original to preserve fields not in the form
                             updated_metadata = current_meta.copy()
                             
                             # Remove the 'id' key - it's not part of the payload
@@ -184,7 +183,6 @@ def admin_app():
                             updated_metadata['doi'] = new_doi
                             
                             # 3. Create the final payload to merge
-                            # This payload will *replace* the entire 'metadata' object
                             new_payload = {
                                 "metadata": updated_metadata
                             }

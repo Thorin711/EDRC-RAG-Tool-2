@@ -539,8 +539,8 @@ def main():
                     st.markdown(f"**Year:** {year}")
                     
                     if doi:
-                        st.markdown(f"**DOI:** {doi}")
-                    
+                        st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
+                    # --- This is the updated code ---
                     with st.expander("Show content snippet"):
                         # 'doc.page_content' is correct because we set
                         # content_payload_key="page_content"

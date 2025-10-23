@@ -1,6 +1,7 @@
 import streamlit as st
 from qdrant_client.http.models import PointStruct
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import Qdrant
 import uuid
 
 
@@ -39,7 +40,7 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
             function to use with the vector store.
         _collection_name (str): The name of the collection in Qdrant.
         _url (str): The URL of the Qdrant Cloud instance.
-        _api_key (str): The API key for the Qdrant Cloud instance.
+        _api_key (str): The API key for the Qdrant Cloud instance.from langchain_huggingface import HuggingFaceEmbeddings
 
     Returns:
         langchain_qdrant.Qdrant: The loaded vector store instance.

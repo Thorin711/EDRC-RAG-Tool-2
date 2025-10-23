@@ -29,11 +29,8 @@ import tiktoken
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
 # --- QDRANT CONFIG ---
-# URL from your Qdrant Cloud dashboard
 QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
 
-# --- !! IMPORTANT !! ---
-# You must replace these with the *exact* names of your collections in Qdrant
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
 COLLECTION_EDRC = "edrc_papers" # Corrected name to match migrator script

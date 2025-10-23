@@ -147,10 +147,11 @@ def admin_app():
         st.markdown(f"**Content Snippet:**\n```\n{doc.page_content[:250]}...\n```")
 
         with st.form("edit_form"):
-            st.subheader("Update Fields")
-            
-            # Get current metadata
-            current_meta = doc.metadata.copy()
+            st.text_input("Title", ...)
+            st.text_input("Authors", ...)
+
+            # This button is INSIDE the form block, which is correct
+            submitted = st.form_submit_button("Save Changes")
             
             # Create form fields, pre-filled with current values
             new_title = st.text_input("Title", value=current_meta.get('title', ''))

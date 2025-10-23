@@ -63,7 +63,7 @@ def admin_app():
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 1. Search Section (MODIFIED) ---
+    # --- 1. Search Section (Uses raw qdrant_client) ---
     st.header("1. Find Document to Edit")
     search_query = st.text_input("Search for a document by title or topic:")
     
@@ -75,7 +75,7 @@ def admin_app():
                     query_vector = embeddings.embed_query(search_query)
                     
                     # 2. Use the raw qdrant_client to search
-                    # This returns ScoredPoint objects, which have the .id attribute
+                    # This returns a list of ScoredPoint objects
                     search_results = qdrant_client.search(
                         collection_name=COLLECTION_EDRC,
                         query_vector=query_vector,
@@ -90,7 +90,7 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    # --- 2. Select Section (MODIFIED) ---
+    # --- 2. Select Section (Expects ScoredPoint objects) ---
     if st.session_state.search_results:
         st.subheader("Search Results")
         
@@ -98,7 +98,7 @@ def admin_app():
         doc_options = []
         for scored_point in st.session_state.search_results:
             # Get payload and metadata
-            payload = scored_point.payload
+            payload = scored_point.payload # This is line 101
             metadata = payload.get("metadata", {})
             
             # Get ID *directly* from the ScoredPoint
@@ -127,7 +127,7 @@ def admin_app():
             }
             st.session_state.selected_doc_id = point_id
 
-    # --- 3. Edit Form Section (MODIFIED) ---
+    # --- 3. Edit Form Section ---
     if st.session_state.selected_doc:
         st.header("2. Edit Metadata")
         
@@ -154,7 +154,7 @@ def admin_app():
             submitted = st.form_submit_button("Save Changes to Database", type="primary")
 
             if submitted:
-                if not point_id: # This check is still valid
+                if not point_id:
                     st.error("Error: Point ID is missing. Cannot update.")
                 else:
                     with st.spinner("Saving changes..."):

@@ -1,5 +1,6 @@
 import streamlit as st
 from qdrant_client.http.models import PointStruct
+from langchain_huggingface import HuggingFaceEmbeddings
 import uuid
 
 

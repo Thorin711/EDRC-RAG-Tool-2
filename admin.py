@@ -39,6 +39,9 @@ def admin_app():
         st.session_state.search_results = None
     if "selected_points" not in st.session_state:
         st.session_state.selected_points = [] 
+    if "selected_collection" not in st.session_state:
+        # Default to EDRC, but this will be updated
+        st.session_state.selected_collection = COLLECTION_EDRC
 
     # --- Load Models and DB Client ---
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
@@ -46,22 +49,49 @@ def admin_app():
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
         st.stop()
 
+    # --- 1. Database Selection (NEW) ---
+    st.header("1. Select Database")
+    DB_OPTIONS = {
+        "Full Database": COLLECTION_FULL,
+        "Journal Articles Only": COLLECTION_JOURNAL,
+        "EDRC Only": COLLECTION_EDRC,
+    }
+    
+    # Get the index of the currently selected collection
+    current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
+    
+    db_choice = st.radio(
+        "Select database to edit:",
+        options=DB_OPTIONS.keys(),
+        horizontal=True,
+        index=current_collection_index
+    )
+    
+    selected_collection_name = DB_OPTIONS[db_choice]
+
+    # --- Clear search results if database is changed ---
+    if selected_collection_name != st.session_state.selected_collection:
+        st.session_state.selected_collection = selected_collection_name
+        st.session_state.search_results = None
+        st.session_state.selected_points = []
+        st.rerun() # Rerun to clear the UI
+
     try:
         embeddings = load_embedding_model()
         vector_store = load_vector_store(
             embeddings,
-            COLLECTION_EDRC,  # Hardcoding to EDRC collection
+            selected_collection_name,  # Use the selected collection
             QDRANT_URL,
             qdrant_api_key
         )
         qdrant_client = vector_store.client
-        st.info(f"Connected to collection: **{COLLECTION_EDRC}**")
+        st.info(f"Connected to collection: **{selected_collection_name}**") # Show selected collection
     except Exception as e:
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 1. Search Section (Uses raw qdrant_client) ---
-    st.header("1. Find Document Chunks to Edit")
+    # --- 2. Search Section (Uses raw qdrant_client) ---
+    st.header("2. Find Document Chunks to Edit")
     search_query = st.text_input("Search for a document by title or topic:")
     
     if st.button("Find Documents"):
@@ -72,11 +102,10 @@ def admin_app():
                     query_vector = embeddings.embed_query(search_query)
                     
                     # 2. Use the raw qdrant_client to search
-                    # This returns a list of ScoredPoint objects
                     search_results = qdrant_client.search(
-                        collection_name=COLLECTION_EDRC,
+                        collection_name=selected_collection_name, # Use selected collection
                         query_vector=query_vector,
-                        limit=25, # Increase limit to find more chunks
+                        limit=25, 
                         with_payload=True 
                     )
                     
@@ -87,11 +116,10 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    # --- 2. Select Section (Expects ScopedPoint objects) ---
+    # --- 3. Select Section (Expects ScoredPoint objects) ---
+    st.header("3. Select Chunks")
     if st.session_state.search_results:
-        st.subheader("Search Results")
-        
-        # search_results is now a list of ScoredPoint
+        # ... (rest of this section is unchanged)
         doc_map = {}
         for point in st.session_state.search_results:
             payload = point.payload
@@ -99,12 +127,9 @@ def admin_app():
             content = payload.get("page_content", "")
             point_id = point.id 
             title = metadata.get('title', 'No Title')
-            
-            # Create a unique, descriptive label for each option
             label = f"'{title}' | Snippet: \"{content[:75]}...\" (ID: {point_id})"
             doc_map[label] = point
-
-        # Use st.multiselect to allow multiple choices
+        
         selected_labels = st.multiselect(
             "Select all document chunks to update:",
             options=doc_map.keys(),
@@ -112,24 +137,21 @@ def admin_app():
         )
 
         if selected_labels:
-            # Map the selected labels back to their ScoredPoint objects
             st.session_state.selected_points = [doc_map[label] for label in selected_labels]
         else:
             st.session_state.selected_points = []
 
-    # --- 3. Edit Form Section (Applies update to all selected) ---
+    # --- 4. Edit Form Section (Applies update to all selected) ---
+    st.header("4. Edit Metadata")
     if st.session_state.selected_points:
-        st.header("2. Edit Metadata for Selected Chunks")
-        
+        # ... (rest of this section is unchanged, except for one variable)
         selected_points = st.session_state.selected_points
         st.markdown(f"**You are about to edit {len(selected_points)} document chunks.**")
         
-        # Get the IDs for display and update
         point_ids_to_update = [point.id for point in selected_points]
         with st.expander("Show IDs to be updated"):
             st.json(point_ids_to_update)
         
-        # Use the *first* selected item to pre-fill the form
         first_point_payload = selected_points[0].payload
         current_meta = first_point_payload.get("metadata", {}).copy()
         
@@ -138,7 +160,6 @@ def admin_app():
         with st.form("edit_form"):
             st.subheader("Update Fields (will apply to all selected items)")
             
-            # Create form fields
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
             new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
@@ -149,7 +170,6 @@ def admin_app():
             if submitted:
                 with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
                     try:
-                        # Create a payload to *merge*
                         payload_to_merge = {
                             "metadata": {
                                 "title": new_title,
@@ -159,18 +179,16 @@ def admin_app():
                             }
                         }
 
-                        # Use set_payload to update ALL points in the list
                         qdrant_client.set_payload(
-                            collection_name=COLLECTION_EDRC,
-                            points=point_ids_to_update,  # Pass the list of IDs
-                            payload=payload_to_merge,   # Pass the merge payload
+                            collection_name=selected_collection_name, # Use selected collection
+                            points=point_ids_to_update,  
+                            payload=payload_to_merge,   
                             wait=True
                         )
                         
                         st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
                         st.balloons()
                         
-                        # Clear state
                         st.session_state.search_results = None
                         st.session_state.selected_points = []
 

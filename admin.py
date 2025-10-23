@@ -1,5 +1,8 @@
 import streamlit as st
-from qdrant_client.http.models import PointStruct, Filter, FieldCondition, MatchText
+from qdrant_client.http.models import (
+    PointStruct, Filter, FieldCondition, MatchText, 
+    PayloadSchemaType # <-- Add this import
+)
 import uuid
 
 # --- Add these imports from your main app.py ---
@@ -54,6 +57,26 @@ def admin_app():
         )
         qdrant_client = vector_store.client
         st.info(f"Connected to collection: **{COLLECTION_EDRC}**")
+
+        # --- START: NEW INDEX CREATION LOGIC ---
+        # Check if the text index for 'metadata.title' exists
+        collection_info = qdrant_client.get_collection(COLLECTION_EDRC)
+        payload_schema = collection_info.payload_schema
+        
+        title_schema = payload_schema.get("metadata.title")
+        
+        # If schema doesn't exist or isn't of type TEXT, create it
+        if not title_schema or title_schema.data_type != PayloadSchemaType.TEXT:
+            with st.spinner("Creating text index for 'metadata.title'... This may take a moment."):
+                qdrant_client.create_field_index(
+                    collection_name=COLLECTION_EDRC,
+                    field_name="metadata.title",
+                    field_schema=PayloadSchemaType.TEXT
+                )
+            st.success("Text index for 'metadata.title' created! Please refresh the page to continue.")
+            st.stop() # Stop the script. User needs to refresh.
+        # --- END: NEW INDEX CREATION LOGIC ---
+
     except Exception as e:
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
@@ -66,27 +89,26 @@ def admin_app():
         if search_query:
             with st.spinner("Searching by title..."):
                 try:
-                    # 1. Create a filter to match text in the metadata.title field
+                    # 1. Create a filter to match text
                     title_filter = Filter(
                         must=[
                             FieldCondition(
-                                key="metadata.title", # Target the nested title field
-                                match=MatchText(text=search_query) # Find partial text matches
+                                key="metadata.title", 
+                                match=MatchText(text=search_query) 
                             )
                         ]
                     )
                     
-                    # 2. Use qdrant_client.scroll to get all results matching the filter
-                    # We don't need a vector here, as we're not doing semantic search
+                    # 2. Use qdrant_client.scroll to get all results
                     search_results, _ = qdrant_client.scroll(
                         collection_name=COLLECTION_EDRC,
                         scroll_filter=title_filter,
-                        limit=100, # Find up to 100 chunks for this title
+                        limit=100, 
                         with_payload=True 
                     )
                     
                     st.session_state.search_results = search_results
-                    st.session_state.selected_points = [] # Clear previous selection
+                    st.session_state.selected_points = [] 
                 except Exception as e:
                     st.error(f"Error during search: {e}")
         else:

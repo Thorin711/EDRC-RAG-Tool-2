@@ -1,10 +1,10 @@
 import streamlit as st
 from qdrant_client.http.models import PointStruct
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import Qdrant
 import uuid
 
-
+# --- Add these imports from your main app.py ---
+from langchain_qdrant import Qdrant
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # --- CONFIGURATION (Copied from app.py) ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
@@ -16,53 +16,18 @@ COLLECTION_EDRC = "edrc_papers"
 # --- CACHING FUNCTIONS (Copied from app.py) ---
 @st.cache_resource
 def load_embedding_model():
-    """Loads and caches the sentence embedding model from Hugging Face.
-
-    This function initializes the `HuggingFaceEmbeddings` model specified by
-    the `EMBEDDING_MODEL_NAME` constant. The `@st.cache_resource` decorator
-    ensures the model is loaded only once and cached for subsequent runs.
-
-    Returns:
-        langchain_huggingface.HuggingFaceEmbeddings: The loaded embedding model.
-    """
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
 
 @st.cache_resource
 def load_vector_store(_embeddings, _collection_name, _url, _api_key):
-    """Loads and caches a Qdrant vector store from the cloud.
-
-    This function initializes a Qdrant vector store by connecting to
-    an existing collection in Qdrant Cloud.
-
-    Args:
-        _embeddings (langchain_core.embeddings.Embeddings): The embedding
-            function to use with the vector store.
-        _collection_name (str): The name of the collection in Qdrant.
-        _url (str): The URL of the Qdrant Cloud instance.
-        _api_key (str): The API key for the Qdrant Cloud instance.from langchain_huggingface import HuggingFaceEmbeddings
-
-    Returns:
-        langchain_qdrant.Qdrant: The loaded vector store instance.
-    """
-
-    # --- START: MODIFIED SECTION ---
-    # These keys must match the payload structure from your migrator script
-    # {"page_content": "...", "metadata": {...}}
-
     return Qdrant.from_existing_collection(
         embedding=_embeddings,
         collection_name=_collection_name,
         url=_url,
         api_key=_api_key,
-
-        # The key holding the main text
-        content_payload_key="page_content", 
-
-        # The key holding the nested metadata dictionary
+        content_payload_key="page_content",
         metadata_payload_key="metadata"
     )
-    # --- END: MODIFIED SECTION ---
 
 # --- Main Admin App ---
 def admin_app():
@@ -85,6 +50,7 @@ def admin_app():
 
     try:
         embeddings = load_embedding_model()
+        # Load vector_store to get the configured client
         vector_store = load_vector_store(
             embeddings,
             COLLECTION_EDRC,  # Hardcoding to EDRC collection
@@ -97,29 +63,47 @@ def admin_app():
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 1. Search Section ---
+    # --- 1. Search Section (MODIFIED) ---
     st.header("1. Find Document to Edit")
     search_query = st.text_input("Search for a document by title or topic:")
     
     if st.button("Find Documents"):
         if search_query:
             with st.spinner("Searching..."):
-                # We use similarity_search_with_score to ensure we get the Point ID
-                results = vector_store.similarity_search_with_score(search_query, k=5)
-                st.session_state.search_results = results
-                st.session_state.selected_doc = None # Clear previous selection
+                try:
+                    # 1. Embed the query
+                    query_vector = embeddings.embed_query(search_query)
+                    
+                    # 2. Use the raw qdrant_client to search
+                    # This returns ScoredPoint objects, which have the .id attribute
+                    search_results = qdrant_client.search(
+                        collection_name=COLLECTION_EDRC,
+                        query_vector=query_vector,
+                        limit=5,
+                        with_payload=True # Ensure we get the payload
+                    )
+                    
+                    st.session_state.search_results = search_results
+                    st.session_state.selected_doc = None # Clear previous selection
+                except Exception as e:
+                    st.error(f"Error during search: {e}")
         else:
             st.warning("Please enter a search query.")
 
-    # --- 2. Select Section ---
+    # --- 2. Select Section (MODIFIED) ---
     if st.session_state.search_results:
         st.subheader("Search Results")
         
-        # Create labels for the radio buttons
+        # search_results is now a list of ScoredPoint
         doc_options = []
-        for doc, score in st.session_state.search_results:
-            title = doc.metadata.get('title', 'No Title')
-            point_id = doc.metadata.get('id', 'MISSING_ID') # LangChain adds the ID here
+        for scored_point in st.session_state.search_results:
+            # Get payload and metadata
+            payload = scored_point.payload
+            metadata = payload.get("metadata", {})
+            
+            # Get ID *directly* from the ScoredPoint
+            point_id = scored_point.id 
+            title = metadata.get('title', 'No Title')
             doc_options.append(f"'{title}' (ID: {point_id})")
 
         selected_option = st.radio("Select a document to edit:", doc_options, index=None)
@@ -127,44 +111,50 @@ def admin_app():
         if selected_option:
             # Find the index of the selected option
             selected_index = doc_options.index(selected_option)
-            # Get the Document object and its ID
-            doc, _ = st.session_state.search_results[selected_index]
-            point_id = doc.metadata.get('id')
+            
+            # Get the ScoredPoint object
+            scored_point = st.session_state.search_results[selected_index]
+            
+            # Get the ID and payload directly
+            point_id = scored_point.id
+            payload = scored_point.payload
             
             # Store them in session state for the form
-            st.session_state.selected_doc = doc
+            # Create a dictionary that mimics the Document structure
+            st.session_state.selected_doc = {
+                "page_content": payload.get("page_content", ""),
+                "metadata": payload.get("metadata", {})
+            }
             st.session_state.selected_doc_id = point_id
 
-    # --- 3. Edit Form Section ---
+    # --- 3. Edit Form Section (MODIFIED) ---
     if st.session_state.selected_doc:
         st.header("2. Edit Metadata")
         
-        doc = st.session_state.selected_doc
+        # doc is now a dictionary
+        doc = st.session_state.selected_doc 
         point_id = st.session_state.selected_doc_id
         
-        st.markdown(f"**Editing Document:** `{doc.metadata.get('title', 'No Title')}`")
+        st.markdown(f"**Editing Document:** `{doc['metadata'].get('title', 'No Title')}`")
         st.caption(f"**Point ID:** `{point_id}`")
-        st.markdown(f"**Content Snippet:**\n```\n{doc.page_content[:250]}...\n```")
+        st.markdown(f"**Content Snippet:**\n```\n{doc['page_content'][:250]}...\n```")
 
         with st.form("edit_form"):
             st.subheader("Update Fields")
             
-            # --- FIX: THIS LINE MUST COME FIRST ---
-            # Get current metadata
-            current_meta = doc.metadata.copy()
+            # Get current metadata from the dictionary
+            current_meta = doc['metadata'].copy()
             
-            # --- THEN, CREATE THE FORM FIELDS ---
+            # Create form fields
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
             new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
             new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
             
-            # --- THEN, CREATE THE SUBMIT BUTTON ---
             submitted = st.form_submit_button("Save Changes to Database", type="primary")
 
-            # --- FINALLY, HANDLE THE SUBMISSION ---
             if submitted:
-                if not point_id:
+                if not point_id: # This check is still valid
                     st.error("Error: Point ID is missing. Cannot update.")
                 else:
                     with st.spinner("Saving changes..."):
@@ -172,10 +162,6 @@ def admin_app():
                             # 1. Create the new metadata dictionary
                             updated_metadata = current_meta.copy()
                             
-                            # Remove the 'id' key - it's not part of the payload
-                            if 'id' in updated_metadata:
-                                del updated_metadata['id'] 
-
                             # 2. Apply the changes from the form
                             updated_metadata['title'] = new_title
                             updated_metadata['authors'] = new_authors
@@ -191,7 +177,7 @@ def admin_app():
                             qdrant_client.set_payload(
                                 collection_name=COLLECTION_EDRC,
                                 points=[point_id],  # The ID of the point to update
-                                payload=new_payload, # The new data to merge
+                                payload=new_payload, # The new data
                                 wait=True
                             )
                             

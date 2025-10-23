@@ -6,4 +6,4 @@ sentence-transformers
 pysqlite3-binary
 tiktoken
 langchain-qdrant 
-qdrant-client
+qdrant-client>=1.8.0

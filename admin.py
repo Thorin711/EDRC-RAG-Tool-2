@@ -1,5 +1,5 @@
 import streamlit as st
-from qdrant_client.http.models import PointStruct
+from qdrant_client.http.models import PointStruct, Filter, FieldCondition, MatchText
 import uuid
 
 # --- Add these imports from your main app.py ---
@@ -34,14 +34,11 @@ def admin_app():
     st.set_page_config(page_title="Admin Panel", page_icon="🔑", layout="wide")
     st.title("🔑 Document Metadata Editor (Multi-Update)")
 
-    # --- Initialize Session State ---
     if "search_results" not in st.session_state:
         st.session_state.search_results = None
-    # --- MODIFIED: Store a list of selected points ---
     if "selected_points" not in st.session_state:
         st.session_state.selected_points = [] 
 
-    # --- Load Models and DB Client ---
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
@@ -51,7 +48,7 @@ def admin_app():
         embeddings = load_embedding_model()
         vector_store = load_vector_store(
             embeddings,
-            COLLECTION_EDRC,  # Hardcoding to EDRC collection
+            COLLECTION_EDRC,
             QDRANT_URL,
             qdrant_api_key
         )
@@ -61,21 +58,33 @@ def admin_app():
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 1. Search Section (Uses raw qdrant_client) ---
-    st.header("1. Find Document Chunks to Edit")
-    search_query = st.text_input("Search for a document by title or topic:")
+    # --- 1. Search Section (MODIFIED for Title Search) ---
+    st.header("1. Find Document Chunks by Title")
+    search_query = st.text_input("Search for a document by keyword in the title:")
     
     if st.button("Find Documents"):
         if search_query:
-            with st.spinner("Searching..."):
+            with st.spinner("Searching by title..."):
                 try:
-                    query_vector = embeddings.embed_query(search_query)
-                    search_results = qdrant_client.search(
+                    # 1. Create a filter to match text in the metadata.title field
+                    title_filter = Filter(
+                        must=[
+                            FieldCondition(
+                                key="metadata.title", # Target the nested title field
+                                match=MatchText(text=search_query) # Find partial text matches
+                            )
+                        ]
+                    )
+                    
+                    # 2. Use qdrant_client.scroll to get all results matching the filter
+                    # We don't need a vector here, as we're not doing semantic search
+                    search_results, _ = qdrant_client.scroll(
                         collection_name=COLLECTION_EDRC,
-                        query_vector=query_vector,
-                        limit=25, # Increase limit to find more chunks
+                        scroll_filter=title_filter,
+                        limit=100, # Find up to 100 chunks for this title
                         with_payload=True 
                     )
+                    
                     st.session_state.search_results = search_results
                     st.session_state.selected_points = [] # Clear previous selection
                 except Exception as e:
@@ -83,11 +92,10 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    # --- 2. Select Section (MODIFIED for Multi-Select) ---
+    # --- 2. Select Section (This section remains the same) ---
     if st.session_state.search_results:
-        st.subheader("Search Results")
+        st.subheader(f"Found {len(st.session_state.search_results)} matching chunks")
         
-        # Create a dictionary to map descriptive labels back to the ScoredPoint objects
         doc_map = {}
         for point in st.session_state.search_results:
             payload = point.payload
@@ -96,11 +104,9 @@ def admin_app():
             point_id = point.id 
             title = metadata.get('title', 'No Title')
             
-            # Create a unique, descriptive label for each option
             label = f"'{title}' | Snippet: \"{content[:75]}...\" (ID: {point_id})"
             doc_map[label] = point
 
-        # Use st.multiselect to allow multiple choices
         selected_labels = st.multiselect(
             "Select all document chunks to update:",
             options=doc_map.keys(),
@@ -108,24 +114,21 @@ def admin_app():
         )
 
         if selected_labels:
-            # Map the selected labels back to their ScoredPoint objects
             st.session_state.selected_points = [doc_map[label] for label in selected_labels]
         else:
             st.session_state.selected_points = []
 
-    # --- 3. Edit Form Section (MODIFIED for Multi-Update) ---
+    # --- 3. Edit Form Section (This section remains the same) ---
     if st.session_state.selected_points:
         st.header("2. Edit Metadata for Selected Chunks")
         
         selected_points = st.session_state.selected_points
         st.markdown(f"**You are about to edit {len(selected_points)} document chunks.**")
         
-        # Get the IDs for display and update
         point_ids_to_update = [point.id for point in selected_points]
         with st.expander("Show IDs to be updated"):
             st.json(point_ids_to_update)
         
-        # Use the *first* selected item to pre-fill the form
         first_point_payload = selected_points[0].payload
         current_meta = first_point_payload.get("metadata", {}).copy()
         
@@ -134,7 +137,6 @@ def admin_app():
         with st.form("edit_form"):
             st.subheader("Update Fields (will apply to all selected items)")
             
-            # Create form fields
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
             new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
@@ -145,10 +147,6 @@ def admin_app():
             if submitted:
                 with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
                     try:
-                        # --- MODIFIED: Create a payload to *merge* ---
-                        # This payload only contains the fields to be updated.
-                        # It will be merged into the existing 'metadata' field
-                        # for all selected points.
                         payload_to_merge = {
                             "metadata": {
                                 "title": new_title,
@@ -158,18 +156,16 @@ def admin_app():
                             }
                         }
 
-                        # 4. Use set_payload to update ALL points in the list
                         qdrant_client.set_payload(
                             collection_name=COLLECTION_EDRC,
-                            points=point_ids_to_update,  # Pass the list of IDs
-                            payload=payload_to_merge,   # Pass the merge payload
+                            points=point_ids_to_update,
+                            payload=payload_to_merge,
                             wait=True
                         )
                         
                         st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
                         st.balloons()
                         
-                        # Clear state
                         st.session_state.search_results = None
                         st.session_state.selected_points = []
 

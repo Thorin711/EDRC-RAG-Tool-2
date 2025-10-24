@@ -19,7 +19,8 @@ import time
 # Use the public Hugging Face GROBID API endpoint
 GROBID_API_URL = "https://kermitt2-grobid.hf.space/api/processFulltextDocument"
 MAX_RETRIES = 2 # Set number of retries
-RETRY_DELAY = 3 # Set delay in seconds
+RETRY_DELAY = 5 # Set delay in seconds
+REQUEST_TIMEOUT = 180 # Set timeout to 180 seconds (3 minutes)
 
 # --- API FUNCTION ---
 
@@ -35,6 +36,11 @@ def call_grobid_api(pdf_bytes, filename):
         str: The resulting TEI XML as a string, or None on failure.
     """
     
+    # Add a check for empty files
+    if not pdf_bytes:
+        st.error(f"Skipped {filename}: File is empty (0 bytes).")
+        return None
+
     # Explicitly define the file payload with a filename and MIME type
     # This is more robust and helps prevent server-side errors.
     files = {
@@ -44,7 +50,8 @@ def call_grobid_api(pdf_bytes, filename):
     for attempt in range(MAX_RETRIES):
         try:
             # Add a timeout to handle potential API delays
-            response = requests.post(GROBID_API_URL, files=files, timeout=60)
+            st.info(f"Uploading and processing {filename} (Attempt {attempt + 1}/{MAX_RETRIES})... Max wait: {REQUEST_TIMEOUT}s")
+            response = requests.post(GROBID_API_URL, files=files, timeout=REQUEST_TIMEOUT)
     
             if response.status_code == 200:
                 return response.text # Success
@@ -60,8 +67,10 @@ def call_grobid_api(pdf_bytes, filename):
             else:
                 st.error(f"GROBID API returned an error (Status {response.status_code}):")
                 st.error(response.text)
-                return None # Don't retry on 4xx
-
+        except requests.exceptions.Timeout:
+            st.warning(f"Connection to GROBID API timed out after {REQUEST_TIMEOUT}s (Attempt {attempt + 1}/{MAX_RETRIES}). This can happen with large files or a busy server. Retrying...")
+            time.sleep(RETRY_DELAY)
+            
         except requests.exceptions.RequestException as e:
             st.error(f"Error connecting to GROBID API (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
             time.sleep(RETRY_DELAY)
@@ -262,4 +271,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

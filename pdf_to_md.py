@@ -6,40 +6,39 @@ import openai
 from llama_parse import LlamaParse
 
 # --- Configuration ---
-LLM_METADATA_MODEL = "gpt-5-mini" # Model for extracting metadata
+LLM_METADATA_MODEL = "gpt-4o-mini" # Model for extracting metadata
 
-# --- Helper Function: Extract Metadata with OpenAI ---
+# --- Helper Function: Extract Metadata with OpenAI (MODIFIED) ---
 
 def extract_metadata_from_text(text_content: str) -> dict:
     """
-    Uses OpenAI function calling to extract metadata from the first page text.
+    Uses OpenAI to extract metadata from the first page text.
     """
     st.write("Extracting metadata using AI...")
     try:
-        # Define the desired JSON structure for the LLM
-        json_schema = {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "The main title of the paper"},
-                "authors": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "A list of all author names"
-                },
-                "year": {"type": "string", "description": "The publication year (e.g., '2024')"},
-                "doi": {"type": "string", "description": "The Digital Object Identifier (DOI)"}
-            },
-            "required": ["title", "authors", "year", "doi"]
+        # --- MODIFIED PART ---
+        # Instead of a schema, we put the instructions directly in the prompt
+        # to guide the JSON output.
+        prompt_schema_instructions = """
+        You must return a single JSON object with the following exact keys:
+        {
+            "title": "The main title of the paper",
+            "authors": ["List of all author names"],
+            "year": "The publication year (e.g., '2024')",
+            "doi": "The Digital Object Identifier (DOI)"
         }
+        If a field is not present, return an empty string (for title, year, doi) 
+        or an empty list (for authors).
+        """
         
-        # Note: We configure the client inside the function to use the secret
         client = openai.OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
 
         response = client.chat.completions.create(
             model=LLM_METADATA_MODEL,
-            response_format={"type": "json_object", "schema": json_schema},
+            # This is the corrected part: We only specify the type, not the schema.
+            response_format={"type": "json_object"}, 
             messages=[
-                {"role": "system", "content": "You are an expert academic librarian. Extract the title, authors, year, and DOI from the provided text. If a field is not present, return an empty string or list."},
+                {"role": "system", "content": f"You are an expert academic librarian. Extract the metadata from the provided text. {prompt_schema_instructions}"},
                 {"role": "user", "content": f"Here is the text from the first page of a research paper:\n\n---\n{text_content}\n---"}
             ]
         )
@@ -50,7 +49,11 @@ def extract_metadata_from_text(text_content: str) -> dict:
 
     except Exception as e:
         st.error(f"Error during AI metadata extraction: {e}")
-        return {}
+        # Add a fallback to handle JSON parsing errors or other issues
+        st.warning("AI extraction failed. Please fill in metadata manually.")
+        # Return an empty structure so the form doesn't crash
+        return {"title": "", "authors": [], "year": "", "doi": ""} 
+    # --- END MODIFIED PART ---
 
 # --- Main Streamlit App ---
 def main():
@@ -96,26 +99,24 @@ def main():
                     # Set the API key for LlamaParse
                     os.environ["LLAMA_CLOUD_API_KEY"] = llama_key
                     
-                    # LlamaParse returns a list of 'Document' objects
                     documents = LlamaParse(result_type="markdown").load_data(tmp_file_path)
                     
-                    # Combine the text from all documents
                     st.session_state.raw_markdown_body = "\n\n".join([doc.text for doc in documents])
                     st.success("LlamaParse processing complete.")
 
                 # --- Step 2: Extract Metadata ---
                 if documents:
-                    # Use text from the first document (usually contains the header)
                     first_page_text = documents[0].text
                     st.session_state.extracted_metadata = extract_metadata_from_text(first_page_text)
                 else:
                     st.warning("LlamaParse returned no content.")
-                    st.session_state.extracted_metadata = {}
+                    st.session_state.extracted_metadata = {"title": "", "authors": [], "year": "", "doi": ""}
 
             except Exception as e:
                 st.error(f"An error occurred during parsing: {e}")
             finally:
-                os.remove(tmp_file_path) # Clean up temp file
+                if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+                    os.remove(tmp_file_path) # Clean up temp file
     
     # --- 2. Metadata Validation Form ---
     if st.session_state.extracted_metadata is not None and not st.session_state.final_markdown:
@@ -160,6 +161,7 @@ def main():
                 # Combine with the markdown body
                 st.session_state.final_markdown = yaml_front_matter + st.session_state.raw_markdown_body
                 st.success("Final Markdown file generated!")
+                st.rerun() # Rerun to show the download section
 
     # --- 3. Download Final File ---
     if st.session_state.final_markdown:
@@ -180,9 +182,10 @@ def main():
 
         if st.button("Process Another File"):
             # Clear all session state to reset the app
-            for key in st.session_state.keys():
+            for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
 if __name__ == "__main__":
     main()
+

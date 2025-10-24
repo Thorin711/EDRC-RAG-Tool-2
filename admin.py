@@ -1,6 +1,14 @@
 import streamlit as st
-from qdrant_client.http.models import PointStruct, FieldCondition, MatchText, Filter # <-- ADD THESE
+# --- ADD THESE IMPORTS ---
+from qdrant_client.http.models import (
+    PointStruct, 
+    FieldCondition, 
+    MatchText, 
+    Filter
+)
 import uuid
+
+# --- Add these imports from your main app.py ---
 from langchain_qdrant import Qdrant
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -38,7 +46,6 @@ def admin_app():
     if "selected_points" not in st.session_state:
         st.session_state.selected_points = [] 
     if "selected_collection" not in st.session_state:
-        # Default to EDRC, but this will be updated
         st.session_state.selected_collection = COLLECTION_EDRC
 
     # --- Load Models and DB Client ---
@@ -55,7 +62,6 @@ def admin_app():
         "EDRC Only": COLLECTION_EDRC,
     }
     
-    # Get the index of the currently selected collection
     current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
     
     db_choice = st.radio(
@@ -67,142 +73,85 @@ def admin_app():
     
     selected_collection_name = DB_OPTIONS[db_choice]
 
-    # --- Clear search results if database is changed ---
     if selected_collection_name != st.session_state.selected_collection:
         st.session_state.selected_collection = selected_collection_name
         st.session_state.search_results = None
         st.session_state.selected_points = []
-        st.rerun() # Rerun to clear the UI
+        st.rerun()
 
     try:
         embeddings = load_embedding_model()
         vector_store = load_vector_store(
             embeddings,
-            selected_collection_name,  # Use the selected collection
+            selected_collection_name,
             QDRANT_URL,
             qdrant_api_key
         )
         qdrant_client = vector_store.client
-        st.info(f"Connected to collection: **{selected_collection_name}**") # Show selected collection
+        st.info(f"Connected to collection: **{selected_collection_name}**")
     except Exception as e:
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 2. Search Section (Uses metadata filter) ---
+    # --- 2. Find Document Chunks to Edit (MODIFIED) ---
     st.header("2. Find Document Chunks to Edit")
-    search_query = st.text_input("Search for a document by its title:") # <-- Changed prompt
+    search_query = st.text_input("Search for a document by its title:")
     
     if st.button("Find Documents"):
+        # Clear previous results on a new search
+        st.session_state.search_results = None
+        st.session_state.selected_points = []
+
         if search_query:
             with st.spinner("Searching by title..."):
                 try:
                     # 1. Define a filter for the metadata title
-                    # This uses dot notation to access the nested key
                     title_filter = Filter(
                         must=[
                             FieldCondition(
-                                key="metadata.title",  # Access the nested 'title' field
-                                match=MatchText(text=search_query) # Perform a full-text search on the title
+                                key="metadata.title",
+                                match=MatchText(text=search_query)
                             )
                         ]
                     )
                     
                     # 2. Use client.scroll() to get all matching points
-                    # 'scroll' retrieves points based on a filter, not a vector.
-                    # It returns a tuple: (records, next_page_offset)
-                    # We just need the records.
                     search_results, _ = qdrant_client.scroll(
                         collection_name=selected_collection_name,
                         scroll_filter=title_filter,
-                        limit=200,  # Set a high limit to get all chunks for an article
+                        limit=200,  # Set a high limit to get all chunks
                         with_payload=True
                     )
                     
-                    st.session_state.search_results = search_results
-                    st.session_state.selected_points = [] # Clear previous selection
+                    st.session_state.search_results = search_results # Store for reference
+                    
+                    # --- NEW LOGIC ---
+                    # Automatically select all found points for editing
+                    st.session_state.selected_points = search_results 
+                    
+                    if not search_results:
+                        st.warning("No documents found with that title.")
+                        
                 except Exception as e:
                     st.error(f"Error during search: {e}")
         else:
             st.warning("Please enter a search query.")
 
-    # --- 3. Select Section (Expects ScoredPoint objects) ---
-    st.header("3. Select Chunks")
-    if st.session_state.search_results:
-        # ... (rest of this section is unchanged)
-        doc_map = {}
-        for point in st.session_state.search_results:
-            payload = point.payload
-            metadata = payload.get("metadata", {})
-            content = payload.get("page_content", "")
-            point_id = point.id 
-            title = metadata.get('title', 'No Title')
-            label = f"'{title}' | Snippet: \"{content[:75]}...\" (ID: {point_id})"
-            doc_map[label] = point
-        
-        selected_labels = st.multiselect(
-            "Select all document chunks to update:",
-            options=doc_map.keys(),
-            help="You can select multiple snippets that belong to the same article."
-        )
+    # --- 3. Select Section (REMOVED) ---
+    # This section has been removed to auto-select all results.
 
-        if selected_labels:
-            st.session_state.selected_points = [doc_map[label] for label in selected_labels]
-        else:
-            st.session_state.selected_points = []
-
-    # --- 4. Edit Form Section (Applies update to all selected) ---
-    st.header("4. Edit Metadata")
+    # --- 4. Edit Form Section (Unchanged, but now appears automatically) ---
+    st.header("3. Edit Metadata") # <-- Renumbered header
     if st.session_state.selected_points:
-        # ... (rest of this section is unchanged, except for one variable)
         selected_points = st.session_state.selected_points
-        st.markdown(f"**You are about to edit {len(selected_points)} document chunks.**")
+        st.markdown(f"**Found {len(selected_points)} document chunks for this title. You are about to edit all of them.**")
         
         point_ids_to_update = [point.id for point in selected_points]
         with st.expander("Show IDs to be updated"):
             st.json(point_ids_to_update)
         
+        # Get metadata from the first chunk to pre-fill the form
         first_point_payload = selected_points[0].payload
         current_meta = first_point_payload.get("metadata", {}).copy()
         
-        st.markdown(f"**Content Snippet (from first selected item):**\n```\n{first_point_payload.get('page_content', '')[:250]}...\n```")
-
-        with st.form("edit_form"):
-            st.subheader("Update Fields (will apply to all selected items)")
-            
-            new_title = st.text_input("Title", value=current_meta.get('title', ''))
-            new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
-            new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
-            new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
-            
-            submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
-
-            if submitted:
-                with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
-                    try:
-                        payload_to_merge = {
-                            "metadata": {
-                                "title": new_title,
-                                "authors": new_authors,
-                                "year": int(new_year),
-                                "doi": new_doi
-                            }
-                        }
-
-                        qdrant_client.set_payload(
-                            collection_name=selected_collection_name, # Use selected collection
-                            points=point_ids_to_update,  
-                            payload=payload_to_merge,   
-                            wait=True
-                        )
-                        
-                        st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
-                        st.balloons()
-                        
-                        st.session_state.search_results = None
-                        st.session_state.selected_points = []
-
-                    except Exception as e:
-                        st.error(f"An error occurred: {e}")
-
-if __name__ == "__main__":
-    admin_app()
+        st.markdown(f"**Content Snippet (from first selected item):**\n

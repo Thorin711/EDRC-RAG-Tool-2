@@ -1,14 +1,14 @@
 import streamlit as st
-# --- ADD THESE IMPORTS ---
+import uuid
+# --- Cleaned up Qdrant Imports ---
 from qdrant_client.http.models import (
     PointStruct, 
     FieldCondition, 
     MatchText, 
     Filter
 )
-import uuid
 
-# --- Add these imports from your main app.py ---
+# --- Imports from your main app.py ---
 from langchain_qdrant import Qdrant
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -54,7 +54,7 @@ def admin_app():
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
         st.stop()
 
-    # --- 1. Database Selection (NEW) ---
+    # --- 1. Database Selection ---
     st.header("1. Select Database")
     DB_OPTIONS = {
         "Full Database": COLLECTION_FULL,
@@ -137,11 +137,8 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    # --- 3. Select Section (REMOVED) ---
-    # This section has been removed to auto-select all results.
-
-    # --- 4. Edit Form Section (Unchanged, but now appears automatically) ---
-    st.header("3. Edit Metadata") # <-- Renumbered header
+    # --- 3. Edit Metadata (Previously Section 4) ---
+    st.header("3. Edit Metadata")
     if st.session_state.selected_points:
         selected_points = st.session_state.selected_points
         st.markdown(f"**Found {len(selected_points)} document chunks for this title. You are about to edit all of them.**")
@@ -154,13 +151,14 @@ def admin_app():
         first_point_payload = selected_points[0].payload
         current_meta = first_point_payload.get("metadata", {}).copy()
         
-        st.markdown(f"**Content Snippet (from first selected item):**\n
+        st.markdown(f"**Content Snippet (from first selected item):**\n```\n{first_point_payload.get('page_content', '')[:250]}...\n```")
+
         with st.form("edit_form"):
             st.subheader("Update Fields (will apply to all selected items)")
             
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
-            new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
+            new_year = st.number_input("Year", min_value=1900, max_value=2100, step=1, value=current_meta.get('year', 2024))
             new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
             
             submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
@@ -197,4 +195,3 @@ def admin_app():
 
 if __name__ == "__main__":
     admin_app()
-

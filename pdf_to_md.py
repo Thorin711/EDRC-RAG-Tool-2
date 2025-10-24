@@ -18,35 +18,57 @@ import time
 # --- CONFIGURATION ---
 # Use the public Hugging Face GROBID API endpoint
 GROBID_API_URL = "https://kermitt2-grobid.hf.space/api/processFulltextDocument"
+MAX_RETRIES = 2 # Set number of retries
+RETRY_DELAY = 3 # Set delay in seconds
 
 # --- API FUNCTION ---
 
-def call_grobid_api(pdf_bytes):
+def call_grobid_api(pdf_bytes, filename):
     """
     Calls the GROBID API with the bytes of a single PDF file.
 
     Args:
         pdf_bytes (bytes): The content of the PDF file.
+        filename (str): The original name of the PDF file.
 
     Returns:
         str: The resulting TEI XML as a string, or None on failure.
     """
-    try:
-        # The 'files' parameter takes a dict-like object
-        files = {'inputFile': pdf_bytes}
-        
-        # Add a timeout to handle potential API delays
-        response = requests.post(GROBID_API_URL, files=files, timeout=60)
+    
+    # Explicitly define the file payload with a filename and MIME type
+    # This is more robust and helps prevent server-side errors.
+    files = {
+        'inputFile': (filename, pdf_bytes, 'application/pdf')
+    }
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Add a timeout to handle potential API delays
+            response = requests.post(GROBID_API_URL, files=files, timeout=60)
+    
+            if response.status_code == 200:
+                return response.text # Success
+            
+            # Handle 5xx Server Errors (like the 500 error you saw)
+            if 500 <= response.status_code < 600:
+                st.warning(f"GROBID API returned server error {response.status_code} (Attempt {attempt + 1}/{MAX_RETRIES}). Retrying in {RETRY_DELAY}s...")
+                st.warning(f"Error detail: {response.text}")
+                time.sleep(RETRY_DELAY)
+                continue # Go to the next retry
+            
+            # Handle 4xx Client Errors (Bad Request, etc.) - no retry needed
+            else:
+                st.error(f"GROBID API returned an error (Status {response.status_code}):")
+                st.error(response.text)
+                return None # Don't retry on 4xx
 
-        if response.status_code == 200:
-            return response.text
-        else:
-            st.error(f"GROBID API returned an error (Status {response.status_code}):")
-            st.error(response.text)
-            return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error connecting to GROBID API: {e}")
-        return None
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error connecting to GROBID API (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            time.sleep(RETRY_DELAY)
+    
+    # If all retries fail
+    st.error(f"Failed to process {filename} after {MAX_RETRIES} attempts.")
+    return None
 
 # --- PARSING FUNCTION (Adapted from your xml_to_md.py) ---
 
@@ -203,7 +225,7 @@ def main():
                     
                     with st.spinner(f"Calling GROBID API for {uploaded_file.name}... (This can take a minute)"):
                         pdf_bytes = uploaded_file.getvalue()
-                        xml_result = call_grobid_api(pdf_bytes)
+                        xml_result = call_grobid_api(pdf_bytes, uploaded_file.name)
                     
                     if xml_result:
                         st.success(f"GROBID processing complete for {uploaded_file.name}.")
@@ -240,3 +262,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

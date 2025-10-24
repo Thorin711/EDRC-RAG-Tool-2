@@ -17,7 +17,7 @@ import time
 
 # --- CONFIGURATION ---
 # NEW: Switched to a different public GROBID API mirror
-GROBID_API_URL = "https://lfoppiano-grobid.hf.space/api/processFulltextDocument"
+GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 MAX_RETRIES = 2 # Set number of retries
 RETRY_DELAY = 5 # Set delay in seconds
 REQUEST_TIMEOUT = 180 # Set timeout to 180 seconds (3 minutes)

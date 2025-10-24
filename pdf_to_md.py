@@ -16,8 +16,8 @@ from bs4 import BeautifulSoup
 import time
 
 # --- CONFIGURATION ---
-# Use the public Hugging Face GROBID API endpoint
-GROBID_API_URL = "https://kermitt2-grobid.hf.space/api/processFulltextDocument"
+# NEW: Switched to a different public GROBID API mirror
+GROBID_API_URL = "https://lfoppiano-grobid.hf.space/api/processFulltextDocument"
 MAX_RETRIES = 2 # Set number of retries
 RETRY_DELAY = 5 # Set delay in seconds
 REQUEST_TIMEOUT = 180 # Set timeout to 180 seconds (3 minutes)
@@ -41,17 +41,40 @@ def call_grobid_api(pdf_bytes, filename):
         st.error(f"Skipped {filename}: File is empty (0 bytes).")
         return None
 
+    # NEW: Sanitize the filename before sending it.
+    # Keep only letters, numbers, hyphens, underscores, and dots.
+    # Replace spaces and other problematic characters with an underscore.
+    sanitized_filename = re.sub(r'[^\w.-]', '_', filename)
+    
     # Explicitly define the file payload with a filename and MIME type
     # This is more robust and helps prevent server-side errors.
     files = {
-        'inputFile': (filename, pdf_bytes, 'application/pdf')
+        'inputFile': (sanitized_filename, pdf_bytes, 'application/pdf')
+    }
+    
+    # NEW: Add explicit form-data parameters that the GROBID server expects.
+    # The server might be failing because these are missing.
+    data = {
+        'consolidateHeader': "1",
+        'consolidateCitations': "0",
+        'includeRawCitations': "0",
+        'includeRawAffiliations': "0",
+        'teiCoordinates': "0",
+        'segmentSentences': "0"
     }
     
     for attempt in range(MAX_RETRIES):
         try:
             # Add a timeout to handle potential API delays
-            st.info(f"Uploading and processing {filename} (Attempt {attempt + 1}/{MAX_RETRIES})... Max wait: {REQUEST_TIMEOUT}s")
-            response = requests.post(GROBID_API_URL, files=files, timeout=REQUEST_TIMEOUT)
+            st.info(f"Uploading and processing {filename} (as {sanitized_filename}) (Attempt {attempt + 1}/{MAX_RETRIES})... Max wait: {REQUEST_TIMEOUT}s")
+            
+            # Pass BOTH 'files' and 'data' to the API
+            response = requests.post(
+                GROBID_API_URL, 
+                files=files, 
+                data=data, # Add the data payload
+                timeout=REQUEST_TIMEOUT
+            )
     
             if response.status_code == 200:
                 return response.text # Success
@@ -60,6 +83,12 @@ def call_grobid_api(pdf_bytes, filename):
             if 500 <= response.status_code < 600:
                 st.warning(f"GROBID API returned server error {response.status_code} (Attempt {attempt + 1}/{MAX_RETRIES}). Retrying in {RETRY_DELAY}s...")
                 st.warning(f"Error detail: {response.text}")
+                
+                # NEW: Add specific advice for this exact error
+                if "java.io.InputStream.close()" in response.text:
+                    st.error(f"Server-side error on {filename}: The PDF might be corrupt, encrypted, or password-protected.")
+                    st.error("Please try a different PDF file. If this error persists with all files, the public GROBID server is likely unstable.")
+                
                 time.sleep(RETRY_DELAY)
                 continue # Go to the next retry
             
@@ -271,5 +300,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

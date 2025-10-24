@@ -241,8 +241,13 @@ def main():
     st.markdown("---")
     
     for uploaded_file in uploaded_files:
-        # Use file.id as a unique key for widgets
-        unique_key = uploaded_file.id
+        
+        #
+        # <-- THIS IS THE FIX -->
+        # Changed from .id to .file_id
+        #
+        unique_key = uploaded_file.file_id 
+        
         st.header(f"Processing: `{uploaded_file.name}`")
         
         with st.spinner(f"Contacting your GROBID server... This can take 1-3 minutes if the server is waking up."):
@@ -268,7 +273,6 @@ def main():
         with col1:
             st.subheader("Metadata (YAML Review & Edit)")
             
-            # <-- MODIFICATION 1: Changed st.code to st.text_area -->
             # This makes the YAML editable.
             edited_yaml = st.text_area(
                 "Edit YAML Metadata:",
@@ -280,7 +284,6 @@ def main():
         with col2:
             st.subheader("Full Markdown Content (Review & Edit)")
             
-            # <-- MODIFICATION 2: Captured the output of the text_area -->
             # This makes the body text editable.
             edited_body = st.text_area(
                 "Review the full extracted text:",
@@ -289,8 +292,6 @@ def main():
                 key=f"body_{unique_key}" # Unique key per file
             )
 
-        # <-- MODIFICATION 3: Re-create the download button in col1 -->
-        # This ensures it uses the *edited* text from both boxes.
         with col1:
             st.write("") # Spacer
             

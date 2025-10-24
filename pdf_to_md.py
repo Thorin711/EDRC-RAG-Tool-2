@@ -6,7 +6,7 @@ import openai
 from llama_parse import LlamaParse
 
 # --- Configuration ---
-LLM_METADATA_MODEL = "gpt-4o-mini" # Model for extracting metadata
+LLM_METADATA_MODEL = "gpt-5-mini" # Model for extracting metadata
 
 # --- Helper Function: Extract Metadata with OpenAI ---
 

@@ -1,8 +1,6 @@
 import streamlit as st
-from qdrant_client.http.models import PointStruct
+from qdrant_client.http.models import PointStruct, FieldCondition, MatchText, Filter # <-- ADD THESE
 import uuid
-
-# --- Add these imports from your main app.py ---
 from langchain_qdrant import Qdrant
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -90,23 +88,34 @@ def admin_app():
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    # --- 2. Search Section (Uses raw qdrant_client) ---
+    # --- 2. Search Section (Uses metadata filter) ---
     st.header("2. Find Document Chunks to Edit")
-    search_query = st.text_input("Search for a document by title or topic:")
+    search_query = st.text_input("Search for a document by its title:") # <-- Changed prompt
     
     if st.button("Find Documents"):
         if search_query:
-            with st.spinner("Searching..."):
+            with st.spinner("Searching by title..."):
                 try:
-                    # 1. Embed the query
-                    query_vector = embeddings.embed_query(search_query)
+                    # 1. Define a filter for the metadata title
+                    # This uses dot notation to access the nested key
+                    title_filter = Filter(
+                        must=[
+                            FieldCondition(
+                                key="metadata.title",  # Access the nested 'title' field
+                                match=MatchText(text=search_query) # Perform a full-text search on the title
+                            )
+                        ]
+                    )
                     
-                    # 2. Use the raw qdrant_client to search
-                    search_results = qdrant_client.search(
-                        collection_name=selected_collection_name, # Use selected collection
-                        query_vector=query_vector,
-                        limit=25, 
-                        with_payload=True 
+                    # 2. Use client.scroll() to get all matching points
+                    # 'scroll' retrieves points based on a filter, not a vector.
+                    # It returns a tuple: (records, next_page_offset)
+                    # We just need the records.
+                    search_results, _ = qdrant_client.scroll(
+                        collection_name=selected_collection_name,
+                        scroll_filter=title_filter,
+                        limit=200,  # Set a high limit to get all chunks for an article
+                        with_payload=True
                     )
                     
                     st.session_state.search_results = search_results

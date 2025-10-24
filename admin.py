@@ -158,7 +158,7 @@ def admin_app():
             
             new_title = st.text_input("Title", value=current_meta.get('title', ''))
             new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
-            new_year = st.number_input("Year", min_value=1900, max_value=2100, step=1, value=current_meta.get('year', 2024))
+            new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
             new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
             
             submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")

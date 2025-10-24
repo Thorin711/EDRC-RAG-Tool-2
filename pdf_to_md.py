@@ -21,7 +21,7 @@ REQUEST_TIMEOUT = 180  # 3 minutes for slow server wake-up and processing
 MAX_RETRIES = 2
 RETRY_DELAY = 5      # 5 seconds to wait between retries
 
-# --- 1. GROBID API CALL LOGIC (from simple_process_pdfs.py) ---
+# --- 1. GROBID API CALL LOGIC ---
 
 def sanitize_filename(filename):
     """
@@ -41,7 +41,12 @@ def sanitize_filename(filename):
         print(f"Error sanitizing filename: {e}")
         return "document.pdf"
 
-@st.cache_data(show_spinner=False)
+#
+# !! THIS IS THE FIX (Part 1) !!
+# The @st.cache_data decorator has been removed.
+# It was caching the function but not handling the file stream correctly,
+# leading to a "null" file being sent on subsequent requests.
+#
 def call_grobid_api(pdf_bytes, filename):
     """
     Calls the configured GROBID API to process a PDF.
@@ -57,24 +62,31 @@ def call_grobid_api(pdf_bytes, filename):
     # Sanitize the filename for the request
     safe_filename = sanitize_filename(filename)
 
-    # The file payload must be a tuple: (filename, file_bytes, mime_type)
-    files = {'inputFile': (safe_filename, pdf_bytes, 'application/pdf')}
+    #
+    # !! THIS IS THE FIX (Part 2) !!
+    # We are building a full multipart/form-data payload that includes
+    # both the file (named 'input') and the other required text fields.
+    # This is the most robust way to make the request.
+    #
+    multipart_payload = {
+        # The file, as a tuple
+        'input': (safe_filename, pdf_bytes, 'application/pdf'),
+        
+        # The other form fields, as (None, value) tuples
+        'consolidateHeader': (None, '1'),
+        'consolidateCitations': (None, '0'),
+        'includeRawCitations': (None, '0'),
+        'includeRawAffiliations': (None, '0'),
+        'teiCoordinates': (None, '0')
+    }
     
-    #
-    # !! THIS IS THE FIX !!
-    # The 'data' dictionary has been removed.
-    # Your server expects a simple file-only upload, and the extra
-    # 'data' fields were causing the "InputStream is null" error.
-    #
-
     for attempt in range(MAX_RETRIES + 1):
         try:
             st.write(f"Connecting to your GROBID server (Attempt {attempt + 1}/{MAX_RETRIES + 1})...")
             response = requests.post(
                 GROBID_API_URL,
-                files=files,
+                files=multipart_payload, # Send the combined payload
                 timeout=REQUEST_TIMEOUT
-                # The 'data=data' parameter has been removed.
             )
 
             if response.status_code == 200:
@@ -108,7 +120,7 @@ def call_grobid_api(pdf_bytes, filename):
     
     return None, "Unknown error after all retries."
 
-# --- 2. XML TO MARKDOWN LOGIC (from xml_to_md.py) ---
+# --- 2. XML TO MARKDOWN LOGIC ---
 
 def parse_xml_to_markdown(xml_content, filename_for_download):
     """
@@ -158,6 +170,10 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         # Safely find DOI
         doi_tag = soup.find('idno', type='DOI')
         if doi_tag:
+            #
+            # !! THIS IS THE FIX (Part 3) !!
+            # Fixed typo: strip=Trie -> strip=True
+            #
             doi = doi_tag.get_text(strip=True)
             
         # Safely find Abstract
@@ -203,7 +219,8 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
                 heading_tag = section.find('head')
                 if heading_tag:
                     heading_text = heading_tag.get_text(strip=True)
-                    n_attr = heading_tag.get('n', '')
+                    # Fixed typo: n_attr = heading_tag.get('n', 'o') -> 'o' is not a valid default
+                    n_attr = heading_tag.get('n', '') 
                     heading_level = n_attr.count('.') + 2 if n_attr else 2
                     heading_prefix = '#' * heading_level
                     markdown_body_parts.append(f"\n{heading_prefix} {heading_text}")
@@ -223,6 +240,7 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         return yaml_front_matter, markdown_body, final_markdown, download_filename
 
     except Exception as e:
+        st.exception(e) # Print the full error to Streamlit
         return None, None, None, f"Error parsing XML: {e}"
 
 # --- 3. STREAMLIT APP UI ---

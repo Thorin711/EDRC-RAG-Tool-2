@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Streamlit App to process PDFs using a personal GROBID server,
-review the extracted YAML, and download the final Markdown.
+review and EDIT the extracted YAML/text, and download the final Markdown.
 """
 
 import streamlit as st
@@ -41,12 +41,7 @@ def sanitize_filename(filename):
         print(f"Error sanitizing filename: {e}")
         return "document.pdf"
 
-#
-# !! THIS IS THE FIX (Part 1) !!
-# The @st.cache_data decorator has been removed.
-# It was caching the function but not handling the file stream correctly,
-# leading to a "null" file being sent on subsequent requests.
-#
+# NOTE: Removed @st.cache_data to prevent file stream errors
 def call_grobid_api(pdf_bytes, filename):
     """
     Calls the configured GROBID API to process a PDF.
@@ -59,20 +54,11 @@ def call_grobid_api(pdf_bytes, filename):
     if len(pdf_bytes) == 0:
         return None, "Skipped processing 0-byte file."
     
-    # Sanitize the filename for the request
     safe_filename = sanitize_filename(filename)
 
-    #
-    # !! THIS IS THE FIX (Part 2) !!
-    # We are building a full multipart/form-data payload that includes
-    # both the file (named 'input') and the other required text fields.
-    # This is the most robust way to make the request.
-    #
+    # Build the full multipart/form-data payload
     multipart_payload = {
-        # The file, as a tuple
         'input': (safe_filename, pdf_bytes, 'application/pdf'),
-        
-        # The other form fields, as (None, value) tuples
         'consolidateHeader': (None, '1'),
         'consolidateCitations': (None, '0'),
         'includeRawCitations': (None, '0'),
@@ -85,7 +71,7 @@ def call_grobid_api(pdf_bytes, filename):
             st.write(f"Connecting to your GROBID server (Attempt {attempt + 1}/{MAX_RETRIES + 1})...")
             response = requests.post(
                 GROBID_API_URL,
-                files=multipart_payload, # Send the combined payload
+                files=multipart_payload, 
                 timeout=REQUEST_TIMEOUT
             )
 
@@ -93,9 +79,8 @@ def call_grobid_api(pdf_bytes, filename):
                 return response.text, None
             else:
                 error_message = f"GROBID API returned an error (Status {response.status_code}):"
-                error_detail = response.text[:500] # Get first 500 chars of error
+                error_detail = response.text[:500] 
                 
-                # Check for the specific error
                 if "Cannot invoke \"java.io.InputStream.close()\"" in error_detail:
                     error_message = (
                         "GROBID server error: 'InputStream is null'. "
@@ -147,7 +132,6 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         year = ""
         abstract_text = ""
 
-        # Safely find the title
         title_stmt = soup.find('titleStmt')
         if title_stmt:
             title_tag = title_stmt.find('title')
@@ -156,7 +140,6 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
 
         title = title.replace('"', '\\"')
 
-        # Safely find authors
         analytic_section = soup.find('analytic')
         if analytic_section:
             for author in analytic_section.find_all('author'):
@@ -167,21 +150,14 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
                     surname = surname_tag.get_text(strip=True) if surname_tag else ""
                     authors.append(f"{forenames} {surname}".strip())
         
-        # Safely find DOI
         doi_tag = soup.find('idno', type='DOI')
         if doi_tag:
-            #
-            # !! THIS IS THE FIX (Part 3) !!
-            # Fixed typo: strip=Trie -> strip=True
-            #
             doi = doi_tag.get_text(strip=True)
             
-        # Safely find Abstract
         abstract_tag = soup.find('abstract')
         if abstract_tag:
             abstract_text = "\n".join([p.get_text(strip=True) for p in abstract_tag.find_all('p')])
 
-        # Safely find Year
         date_source = soup.find('publicationStmt') or soup.find('monogr')
         if date_source:
             date_tag = date_source.find('date')
@@ -204,7 +180,7 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
             yaml_front_matter += "  - Not Available\n"
         yaml_front_matter += f'doi: "{doi}"\n'
         yaml_front_matter += f'year: "{year}"\n'
-        yaml_front_matter += "---\n\n"
+        yaml_front_matter += "---\n\n" # IMPORTANT: Keep the newlines
 
         # --- 3. Process the Body Content ---
         markdown_body_parts = []
@@ -219,8 +195,7 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
                 heading_tag = section.find('head')
                 if heading_tag:
                     heading_text = heading_tag.get_text(strip=True)
-                    # Fixed typo: n_attr = heading_tag.get('n', 'o') -> 'o' is not a valid default
-                    n_attr = heading_tag.get('n', '') 
+                    n_attr = heading_tag.get('n', '')
                     heading_level = n_attr.count('.') + 2 if n_attr else 2
                     heading_prefix = '#' * heading_level
                     markdown_body_parts.append(f"\n{heading_prefix} {heading_text}")
@@ -233,15 +208,15 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         # --- 4. Assemble and return ---
         final_markdown = yaml_front_matter + markdown_body
         
-        # Create download filename
         base_name = os.path.splitext(filename_for_download)[0]
         download_filename = f"{base_name}.md"
         
-        return yaml_front_matter, markdown_body, final_markdown, download_filename
+        # Return the individual parts for editing
+        return yaml_front_matter, markdown_body, download_filename
 
     except Exception as e:
         st.exception(e) # Print the full error to Streamlit
-        return None, None, None, f"Error parsing XML: {e}"
+        return None, None, f"Error parsing XML: {e}"
 
 # --- 3. STREAMLIT APP UI ---
 
@@ -266,6 +241,8 @@ def main():
     st.markdown("---")
     
     for uploaded_file in uploaded_files:
+        # Use file.id as a unique key for widgets
+        unique_key = uploaded_file.id
         st.header(f"Processing: `{uploaded_file.name}`")
         
         with st.spinner(f"Contacting your GROBID server... This can take 1-3 minutes if the server is waking up."):
@@ -279,7 +256,7 @@ def main():
         st.success(f"Successfully processed `{uploaded_file.name}`!")
 
         with st.spinner("Parsing XML and building Markdown..."):
-            yaml_data, md_body, full_md, dl_filename = parse_xml_to_markdown(xml_result, uploaded_file.name)
+            yaml_data, md_body, dl_filename = parse_xml_to_markdown(xml_result, uploaded_file.name)
         
         if not yaml_data:
             st.error(f"Failed to parse XML for `{uploaded_file.name}`: {dl_filename}")
@@ -289,19 +266,44 @@ def main():
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.subheader("Metadata (YAML Review)")
-            st.code(yaml_data, language="yaml")
+            st.subheader("Metadata (YAML Review & Edit)")
+            
+            # <-- MODIFICATION 1: Changed st.code to st.text_area -->
+            # This makes the YAML editable.
+            edited_yaml = st.text_area(
+                "Edit YAML Metadata:",
+                value=yaml_data,
+                height=300,
+                key=f"yaml_{unique_key}" # Unique key per file
+            )
+        
+        with col2:
+            st.subheader("Full Markdown Content (Review & Edit)")
+            
+            # <-- MODIFICATION 2: Captured the output of the text_area -->
+            # This makes the body text editable.
+            edited_body = st.text_area(
+                "Review the full extracted text:",
+                value=md_body,
+                height=500,
+                key=f"body_{unique_key}" # Unique key per file
+            )
+
+        # <-- MODIFICATION 3: Re-create the download button in col1 -->
+        # This ensures it uses the *edited* text from both boxes.
+        with col1:
+            st.write("") # Spacer
+            
+            # Combine the *edited* parts for the final download
+            final_markdown_for_download = edited_yaml + edited_body
             
             st.download_button(
                 label=f"Download `{dl_filename}`",
-                data=full_md,
+                data=final_markdown_for_download, # Use the edited content
                 file_name=dl_filename,
                 mime="text/markdown",
+                key=f"dl_{unique_key}" # Unique key per file
             )
-
-        with col2:
-            st.subheader("Full Markdown Content")
-            st.text_area("Review the full extracted text:", value=md_body, height=500)
 
         st.markdown("---")
 

@@ -155,3 +155,46 @@ def admin_app():
         current_meta = first_point_payload.get("metadata", {}).copy()
         
         st.markdown(f"**Content Snippet (from first selected item):**\n
+        with st.form("edit_form"):
+            st.subheader("Update Fields (will apply to all selected items)")
+            
+            new_title = st.text_input("Title", value=current_meta.get('title', ''))
+            new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
+            new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
+            new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
+            
+            submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
+
+            if submitted:
+                with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
+                    try:
+                        payload_to_merge = {
+                            "metadata": {
+                                "title": new_title,
+                                "authors": new_authors,
+                                "year": int(new_year),
+                                "doi": new_doi
+                            }
+                        }
+
+                        qdrant_client.set_payload(
+                            collection_name=selected_collection_name,
+                            points=point_ids_to_update,  
+                            payload=payload_to_merge,   
+                            wait=True
+                        )
+                        
+                        st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
+                        st.balloons()
+                        
+                        # Clear state to be ready for the next search
+                        st.session_state.search_results = None
+                        st.session_state.selected_points = []
+                        st.rerun() # Rerun to hide the form
+
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    admin_app()
+

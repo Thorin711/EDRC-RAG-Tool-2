@@ -9,3 +9,5 @@ langchain-qdrant
 qdrant-client>=1.8.0
 llama-parse
 bs4 
+beautifulsoup4
+lxml

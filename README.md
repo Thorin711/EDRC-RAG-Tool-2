@@ -1,17 +1,18 @@
-# EDRC Research Paper RAG Tool
+# Research Paper RAG Tool
 
-This repository contains a Retrieval-Augmented Generation (RAG) tool designed to search and synthesize information from a collection of research papers. The tool consists of a data processing pipeline to create a vector database from PDF and XML files, and a Streamlit web application for user interaction.
+This repository contains a Retrieval-Augmented Generation (RAG) tool designed to search and synthesize information from a collection of research papers. The tool consists of a suite of Streamlit applications for data processing, metadata administration, and user-facing search.
 
 ## Table of Contents
 
 - [Project Overview](#project-overview)
-- [Data Processing Pipeline](#data-processing-pipeline)
+- [System Architecture](#system-architecture)
 - [Setup and Installation](#setup-and-installation)
   - [Prerequisites](#prerequisites)
   - [Installation Steps](#installation-steps)
 - [Usage](#usage)
-  - [1. Data Preparation](#1-data-preparation)
-  - [2. Running the Application](#2-running-the-application)
+  - [1. Data Processing (`pdf_to_md.py`)](#1-data-processing-pdf_to_mdpy)
+  - [2. Search and Query (`app.py`)](#2-search-and-query-apppy)
+  - [3. Metadata Management (`admin.py`)](#3-metadata-management-adminpy)
 - [File Descriptions](#file-descriptions)
 
 ## Project Overview
@@ -19,44 +20,43 @@ This repository contains a Retrieval-Augmented Generation (RAG) tool designed to
 The primary goal of this project is to provide an intelligent search interface for a corpus of research documents. Instead of simple keyword matching, it uses semantic search to find the most relevant document passages and an LLM to generate a summarized answer based on the retrieved information, complete with citations.
 
 **Key Features:**
-- **End-to-End Pipeline:** Scripts to process raw PDFs into a structured vector database.
+- **Interactive Data Pipeline:** A Streamlit app (`pdf_to_md.py`) for processing PDFs, reviewing extracted text, and uploading to a vector database.
 - **Semantic Search:** Utilizes sentence embeddings to find conceptually related text.
 - **AI-Powered Summarization:** Generates a concise, cited summary of the findings.
-- **Interactive UI:** A user-friendly Streamlit web app to ask questions and explore results.
-- **Modular and Extensible:** The data pipeline and app are separated for easier maintenance and extension.
+- **Web-Based UI:** A user-friendly Streamlit web app (`app.py`) to ask questions and explore results.
+- **Metadata Management:** An admin panel (`admin.py`) to find and batch-update document metadata.
 
-## Data Processing Pipeline
+## System Architecture
 
-The data processing pipeline converts raw research papers (ideally in PDF format) into a Chroma vector database. This is a multi-step process:
+The system is built around three core Streamlit applications that interact with a Qdrant Cloud vector database.
 
-1.  **PDF to TEI XML (`simple_process_pdfs.py`):**
-    -   Uses the [GROBID](https://github.com/kermitt2/grobid) service to parse PDFs.
-    -   GROBID extracts structured text and metadata (title, authors, abstract, sections) and outputs it as a TEI XML file. This is crucial for preserving the document's structure.
+1.  **`pdf_to_md.py` (PDF Uploader & Processor):**
+    -   Users upload PDF documents through the Streamlit interface.
+    -   The app calls a remote **GROBID** service to parse the PDF and extract structured XML.
+    -   The XML is converted to Markdown, and metadata (title, authors, etc.) is extracted.
+    -   The user can review and edit the extracted text and metadata directly in the app.
+    -   Upon confirmation, the app splits the document into chunks and uploads them to a specified **Qdrant** collection.
 
-2.  **TEI XML to Markdown (`xml_to_md.py`):**
-    -   The script converts the TEI XML files into clean Markdown files.
-    -   It extracts metadata (title, authors, year, DOI) and places it into a YAML front matter block.
-    -   The main content is converted to Markdown, with section headings preserved. Unnecessary sections like "References" and "Acknowledgements" are removed.
+2.  **`app.py` (Main Search Application):**
+    -   The primary interface for end-users.
+    -   Connects to the Qdrant database to perform semantic search.
+    -   Allows users to select different collections (e.g., "Full Database", "Journal Articles Only").
+    -   Features AI-powered query enhancement and result summarization using OpenAI models.
+    -   Displays search results with metadata, content snippets, and links to the source.
 
-3.  **Markdown to Vector Database (`create_vectordb.py`):**
-    -   Loads the Markdown files, including their front matter metadata.
-    -   Splits the documents into smaller chunks based on their Markdown headers. This keeps related paragraphs together under their original section headings.
-    -   Uses a Hugging Face embedding model (`BAAI/bge-large-en-v1.5`) to generate a vector representation for each text chunk.
-    -   Stores these chunks and their embeddings in a persistent Chroma vector database.
+3.  **`admin.py` (Metadata Admin Panel):**
+    -   A utility for database maintenance.
+    -   Allows an administrator to search for documents by title.
+    -   Retrieves all chunks associated with a title and allows for batch updates of their shared metadata (e.g., correcting a typo in the title, adding a DOI).
 
 ## Setup and Installation
 
 ### Prerequisites
 
 -   **Python 3.8+**
--   **GROBID:** You must have a running GROBID instance. The easiest way to set one up is using Docker:
-    ```bash
-    docker pull lfoppiano/grobid:0.8.0
-    docker run -t --rm --init -p 8070:8070 lfoppiano/grobid:0.8.0
-    ```
-    The GROBID service will be available at `http://localhost:8070`.
-
--   **OpenAI API Key:** For the AI-enhanced search and summarization features, you need an OpenAI API key.
+-   **GROBID:** The data processing app is configured to use a remote GROBID server. The default is a free Hugging Face Space (`https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument`), but you can substitute your own.
+-   **OpenAI API Key:** For the AI-enhanced search and summarization features.
+-   **Qdrant API Key:** To connect to your Qdrant Cloud database.
 
 ### Installation Steps
 
@@ -77,62 +77,69 @@ The data processing pipeline converts raw research papers (ideally in PDF format
     pip install -r requirements.txt
     ```
 
-4.  **Set up Streamlit secrets for your OpenAI API Key:**
-    -   Create a file at `~/.streamlit/secrets.toml` (or inside your project directory at `.streamlit/secrets.toml`).
-    -   Add your key to this file:
+4.  **Set up Streamlit secrets:**
+    -   Create a file at `.streamlit/secrets.toml` inside your project directory.
+    -   Add your API keys to this file:
         ```toml
         OPENAI_API_KEY="sk-..."
+        QDRANT_API_KEY="your-qdrant-api-key"
         ```
 
 ## Usage
 
-### 1. Data Preparation
+Each part of the system is a standalone Streamlit application.
 
-To create your own vector database, follow these steps. Note that the paths in the scripts are hardcoded and will need to be adjusted to your local file structure.
+### 1. Data Processing (`pdf_to_md.py`)
 
-1.  **Place PDFs:** Put all your research paper PDFs into a single directory (e.g., `C:/data/pdfs`).
+This app is for adding new documents to the vector database.
 
-2.  **Run GROBID Processing (`simple_process_pdfs.py`):**
-    -   Open `simple_process_pdfs.py`.
-    -   Set `in_path` to your PDF directory and `out_path` to where you want the XML files to be saved.
-    -   Ensure your GROBID Docker container is running.
-    -   Run the script: `python simple_process_pdfs.py`
+1.  **Launch the app:**
+    ```bash
+    streamlit run pdf_to_md.py
+    ```
 
-3.  **Run XML to Markdown Conversion (`xml_to_md.py`):**
-    -   Open `xml_to_md.py`.
-    -   Set `input_dir` to the directory containing the XML files from the previous step.
-    -   Set `output_dir` to where you want the final Markdown files to be saved.
-    -   Run the script: `python xml_to_md.py`
+2.  **Using the App:**
+    -   Select the target Qdrant collection (e.g., "Full Database").
+    -   Upload one or more PDF files.
+    -   The app will process each PDF using GROBID. This may take a few minutes.
+    -   Review and edit the extracted metadata (title, authors, etc.) and the body text for each document.
+    -   Click "Confirm & Upload to Vector DB" to chunk the document and add it to the selected collection.
 
-4.  **Create the Vector Database (`create_vectordb.py`):**
-    -   Open `create_vectordb.py`.
-    -   Set `md_output_dir` to the directory containing your Markdown files.
-    -   Set `db_persist_dir` to the name of the folder where the vector database will be created (e.g., `./my_vector_db`).
-    -   Run the script: `python create_vectordb.py`. This may take some time depending on the number of documents.
+### 2. Search and Query (`app.py`)
 
-### 2. Running the Application
+This is the main application for searching the document collections.
 
-Once you have your vector database(s), you can run the Streamlit app. The app is configured to download pre-built databases from GitHub Releases on its first run, so you can try it out without preparing your own data.
-
-1.  **Launch the Streamlit App:**
+1.  **Launch the app:**
     ```bash
     streamlit run app.py
     ```
 
 2.  **Using the App:**
-    -   The app will automatically download and set up the default vector databases if they are not found locally.
-    -   Select which database you want to search ("Full Database" or "Journal Articles Only").
+    -   Select which database collection you want to search.
     -   Enter your research question in the text box.
-    -   Adjust the number of results to retrieve using the slider.
-    -   Toggle "AI-Enhanced Search" to have an LLM refine your query for better results.
-    -   Toggle "Generate AI Summary" to get a synthesized answer with citations.
-    -   Click "Search". The results will be displayed below.
+    -   Use the toggles to enable "AI-Enhanced Search" or "Generate AI Summary."
+    -   Click "Search." The results will be displayed below.
+
+### 3. Metadata Management (`admin.py`)
+
+This app is for correcting or updating metadata for documents already in the database.
+
+1.  **Launch the app:**
+    ```bash
+    streamlit run admin.py
+    ```
+
+2.  **Using the App:**
+    -   Select the database collection you want to edit.
+    -   Search for a document by its title.
+    -   All document chunks matching that title will be retrieved.
+    -   Enter the corrected metadata in the form.
+    -   Click "Save Changes" to update the metadata for all selected chunks simultaneously.
 
 ## File Descriptions
 
--   `app.py`: The main Streamlit web application.
--   `create_vectordb.py`: Script to create a Chroma vector database from processed Markdown files.
--   `simple_process_pdfs.py`: Script to process PDFs with a GROBID service to generate TEI XML.
--   `xml_to_md.py`: Script to convert TEI XML files into Markdown with YAML front matter.
--   `requirements.txt`: A list of all the Python packages required to run the project.
+-   `app.py`: The main user-facing Streamlit application for search and retrieval.
+-   `pdf_to_md.py`: A Streamlit app for processing PDFs and uploading them to the Qdrant vector database.
+-   `admin.py`: A Streamlit utility app for batch-editing document metadata in Qdrant.
+-   `requirements.txt`: A list of the Python packages required to run the project.
 -   `README.md`: This file.

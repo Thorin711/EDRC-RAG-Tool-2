@@ -65,7 +65,7 @@ def call_grobid_api(pdf_bytes, filename):
     Calls the configured GROBID API to process a PDF.
     """
     if GROBID_API_URL.startswith("https://YOUR-HF-USERNAME"):
-        st.error("Please update the `GROBID_API_URL` with your HF Space URL.", icon="🚨")
+        st.error("Please update the `GROBID_API_URL` with your HF Space URL.", icon="圷")
         return None, "Configuration Error"
 
     safe_filename = sanitize_filename(filename)
@@ -243,17 +243,17 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
 
 def main():
     st.set_page_config(layout="wide", page_title="PDF to Vector DB Uploader")
-    st.title("📄 PDF to Vector DB Uploader")
+    st.title("塘 PDF to Vector DB Uploader")
     st.markdown("Extract, review, and upload academic papers directly to your Qdrant database.")
 
     # --- NEW: Load API Key and Embedding Model ---
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon="🚨")
+        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon="圷")
         st.stop()
         
     if QDRANT_URL == "https://YOUR-QDRANT-CLOUD-URL.com":
-        st.error("Please update the `QDRANT_URL` variable in the script.", icon="🚨")
+        st.error("Please update the `QDRANT_URL` variable in the script.", icon="圷")
         st.stop()
 
     try:
@@ -312,7 +312,7 @@ def main():
             st.error(f"Failed to parse XML for `{uploaded_file.name}`: {dl_filename}")
             continue
 
-        # --- Display Results (Unchanged) ---
+        # --- Display Results (Modified Layout) ---
         col1, col2 = st.columns([1, 2])
 
         with col1:
@@ -343,84 +343,77 @@ def main():
                 key=f"body_{unique_key}"
             )
 
-        # --- 3. Actions Column (Modified) ---
-        with col1:
-            st.subheader("3. Finalize & Export")
-            st.write("") # Spacer
-            
-            # --- Assemble Final Content (for both buttons) ---
-            safe_title = edited_title.replace('"', '\\"')
-            safe_doi = edited_doi.replace('"', '\\"')
-            safe_year = edited_year.replace('"', '\\"')
+        # --- 3. Actions Section (Moved out of columns) ---
+        st.subheader("3. Finalize & Upload")
+        
+        # --- Assemble Final Content (for upload button) ---
+        safe_title = edited_title.replace('"', '\\"')
+        safe_doi = edited_doi.replace('"', '\\"')
+        safe_year = edited_year.replace('"', '\\"')
 
-            final_yaml_str = "---\n"
-            final_yaml_str += f'title: "{safe_title}"\n'
-            final_yaml_str += "authors:\n"
-            final_yaml_str += edited_authors_str + "\n"
-            final_yaml_str += f'doi: "{safe_doi}"\n'
-            final_yaml_str += f'year: "{safe_year}"\n'
-            final_yaml_str += "---\n\n"
-            
-            final_markdown_for_download = final_yaml_str + edited_body
-            
-            # --- Download Button (Unchanged) ---
-            st.download_button(
-                label=f"Download `{dl_filename}`",
-                data=final_markdown_for_download,
-                file_name=dl_filename,
-                mime="text/markdown",
-                key=f"dl_{unique_key}"
-            )
+        final_yaml_str = "---\n"
+        final_yaml_str += f'title: "{safe_title}"\n'
+        final_yaml_str += "authors:\n"
+        final_yaml_str += edited_authors_str + "\n"
+        final_yaml_str += f'doi: "{safe_doi}"\n'
+        final_yaml_str += f'year: "{safe_year}"\n'
+        final_yaml_str += "---\n\n"
+        
+        final_markdown_for_download = final_yaml_str + edited_body
+        
+        # --- Download Button REMOVED ---
 
-            st.write("") # Spacer
-
-            # --- NEW: UPLOAD BUTTON ---
-            if st.button("Confirm & Upload to Vector DB", type="primary", key=f"upload_{unique_key}"):
-                with st.spinner(f"Uploading `{edited_title}` to Qdrant collection '{selected_collection_name}'..."):
-                    try:
-                        # 1. Create the metadata dictionary for the chunks
-                        # Parse authors string back into a simple comma-separated string
-                        authors_list = [
-                            line.strip().lstrip('-').lstrip().strip('"') 
-                            for line in edited_authors_str.split('\n') 
-                            if line.strip() and line.strip() != "-"
-                        ]
-                        authors_string = ", ".join(authors_list)
-                        
-                        doc_metadata = {
-                            "title": edited_title,
-                            "authors": authors_string,
-                            "doi": edited_doi,
-                            "source": uploaded_file.name # Use the original PDF name as source
-                        }
-                        
-                        # Add year only if it's a valid integer
-                        try:
-                            doc_metadata["year"] = int(edited_year)
-                        except ValueError:
-                            st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
-                            pass
-
-                        # 2. Chunk the document (using the full text, including YAML)
-                        # The chunker will use headers but the YAML will be in the first chunk.
-                        # This is fine as the metadata is applied to all chunks anyway.
-                        chunks = chunk_document(final_markdown_for_download, doc_metadata)
-                        
-                        # 3. Upload the chunks
-                        upload_chunks(
-                            chunks=chunks,
-                            embedding_model=embeddings,
-                            url=QDRANT_URL,
-                            api_key=qdrant_api_key,
-                            collection_name=selected_collection_name # <-- MODIFIED
-                        )
+        # --- MODIFIED: UPLOAD BUTTON (Full Width) ---
+        if st.button(
+            "Confirm & Upload to Vector DB", 
+            type="primary", 
+            key=f"upload_{unique_key}",
+            use_container_width=True  # <-- This makes it full-width
+        ):
+            with st.spinner(f"Uploading `{edited_title}` to Qdrant collection '{selected_collection_name}'..."):
+                try:
+                    # 1. Create the metadata dictionary for the chunks
+                    # Parse authors string back into a simple comma-separated string
+                    authors_list = [
+                        line.strip().lstrip('-').lstrip().strip('"') 
+                        for line in edited_authors_str.split('\n') 
+                        if line.strip() and line.strip() != "-"
+                    ]
+                    authors_string = ", ".join(authors_list)
                     
-                    except Exception as e:
-                        st.error(f"An error occurred during upload: {e}")
-                        st.exception(e)
+                    doc_metadata = {
+                        "title": edited_title,
+                        "authors": authors_string,
+                        "doi": edited_doi,
+                        "source": uploaded_file.name # Use the original PDF name as source
+                    }
+                    
+                    # Add year only if it's a valid integer
+                    try:
+                        doc_metadata["year"] = int(edited_year)
+                    except ValueError:
+                        st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
+                        pass
+
+                    # 2. Chunk the document (using the full text, including YAML)
+                    # The chunker will use headers but the YAML will be in the first chunk.
+                    # This is fine as the metadata is applied to all chunks anyway.
+                    chunks = chunk_document(final_markdown_for_download, doc_metadata)
+                    
+                    # 3. Upload the chunks
+                    upload_chunks(
+                        chunks=chunks,
+                        embedding_model=embeddings,
+                        url=QDRANT_URL,
+                        api_key=qdrant_api_key,
+                        collection_name=selected_collection_name # <-- MODIFIED
+                    )
+                
+                except Exception as e:
+                    st.error(f"An error occurred during upload: {e}")
+                    st.exception(e)
 
         st.markdown("---")
 
 if __name__ == "__main__":
     main()
-

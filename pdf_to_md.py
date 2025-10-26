@@ -109,8 +109,8 @@ def call_grobid_api(pdf_bytes, filename):
 
 def parse_xml_to_markdown(xml_content, filename_for_download):
     """
-    Parses GROBID's XML, extracts YAML and body, and returns them.
-    Returns (yaml_str, body_str, full_md_str, download_filename)
+    Parses GROBID's XML, extracts metadata and body.
+    Returns: (title, authors, doi, year, body_str, download_filename)
     """
     try:
         soup = BeautifulSoup(xml_content, 'lxml-xml')
@@ -137,8 +137,8 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
             title_tag = title_stmt.find('title')
             if title_tag:
                 title = title_tag.get_text(strip=True)
-
-        title = title.replace('"', '\\"')
+        
+        # We will handle escaping quotes *after* the user edits, in main()
 
         analytic_section = soup.find('analytic')
         if analytic_section:
@@ -170,17 +170,7 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
                         year = year_match.group(0)
 
         # --- 2. Create YAML Front Matter ---
-        yaml_front_matter = "---\n"
-        yaml_front_matter += f'title: "{title}"\n'
-        yaml_front_matter += "authors:\n"
-        if authors:
-            for author in authors:
-                yaml_front_matter += f'  - "{author}"\n'
-        else:
-            yaml_front_matter += "  - Not Available\n"
-        yaml_front_matter += f'doi: "{doi}"\n'
-        yaml_front_matter += f'year: "{year}"\n'
-        yaml_front_matter += "---\n\n" # IMPORTANT: Keep the newlines
+        # We now skip this. We will return the raw data instead.
 
         # --- 3. Process the Body Content ---
         markdown_body_parts = []
@@ -206,23 +196,23 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         markdown_body = "\n\n".join(markdown_body_parts)
 
         # --- 4. Assemble and return ---
-        final_markdown = yaml_front_matter + markdown_body
-        
         base_name = os.path.splitext(filename_for_download)[0]
         download_filename = f"{base_name}.md"
         
-        # Return the individual parts for editing
-        return yaml_front_matter, markdown_body, download_filename
+        # Return the individual parts for editing in the UI
+        return title, authors, doi, year, markdown_body, download_filename
 
     except Exception as e:
         st.exception(e) # Print the full error to Streamlit
-        return None, None, f"Error parsing XML: {e}"
+        # Return Nones to match the new 6-value return signature
+        return None, None, None, None, None, f"Error parsing XML: {e}"
+
 
 # --- 3. STREAMLIT APP UI ---
 
 def main():
-    st.set_page_config(layout="wide", page_title=" PDF Processor")
-    st.title("📄 PDF to Markdown Converter")
+    st.set_page_config(layout="wide", page_title="GROBID PDF Processor")
+    st.title("📄 GROBID PDF to Markdown Converter")
     st.markdown("This app uses your personal GROBID server on Hugging Face to extract metadata and text from academic papers.")
 
     uploaded_files = st.file_uploader(
@@ -242,11 +232,15 @@ def main():
     
     for uploaded_file in uploaded_files:
         
+        #
+        # <-- THIS IS THE FIX -->
+        # Changed from .id to .file_id
+        #
         unique_key = uploaded_file.file_id 
         
         st.header(f"Processing: `{uploaded_file.name}`")
         
-        with st.spinner(f"Contacting your GROBID server... This can take 10+ minutes if the server is waking up."):
+        with st.spinner(f"Contacting your GROBID server... This can take 1-3 minutes if the server is waking up."):
             pdf_bytes = uploaded_file.getvalue()
             xml_result, error_msg = call_grobid_api(pdf_bytes, uploaded_file.name)
 
@@ -257,9 +251,14 @@ def main():
         st.success(f"Successfully processed `{uploaded_file.name}`!")
 
         with st.spinner("Parsing XML and building Markdown..."):
-            yaml_data, md_body, dl_filename = parse_xml_to_markdown(xml_result, uploaded_file.name)
+            # --- MODIFICATION ---
+            # Get individual fields instead of pre-built YAML
+            title, authors, doi, year, md_body, dl_filename = parse_xml_to_markdown(
+                xml_result, uploaded_file.name
+            )
         
-        if not yaml_data:
+        # Error check (md_body will be None on parse failure)
+        if md_body is None:
             st.error(f"Failed to parse XML for `{uploaded_file.name}`: {dl_filename}")
             continue
 
@@ -269,14 +268,42 @@ def main():
         with col1:
             st.subheader("Metadata (YAML Review & Edit)")
             
-            # This makes the YAML editable.
-            edited_yaml = st.text_area(
-                "Edit YAML Metadata:",
-                value=yaml_data,
-                height=300,
-                key=f"yaml_{unique_key}" # Unique key per file
+            # --- MODIFICATION ---
+            # Create individual text boxes for each metadata field
+            
+            edited_title = st.text_input(
+                "Title:",
+                value=title,
+                key=f"title_{unique_key}"
             )
-        
+            
+            edited_doi = st.text_input(
+                "DOI:",
+                value=doi,
+                key=f"doi_{unique_key}"
+            )
+            
+            edited_year = st.text_input(
+                "Year:",
+                value=year,
+                key=f"year_{unique_key}"
+            )
+            
+            # For authors, a text_area is best as it's a list.
+            # Convert the list to a YAML-formatted string for the text_area.
+            if authors:
+                author_list_str = "\n".join([f'  - "{auth}"' for auth in authors])
+            else:
+                author_list_str = "  - Not Available"
+            
+            edited_authors_str = st.text_area(
+                "Authors (YAML list format):",
+                value=author_list_str,
+                height=150,
+                key=f"authors_{unique_key}",
+                help="Keep this in the YAML list format (e.g., '  - \"First Last\"')"
+            )
+            
         with col2:
             st.subheader("Full Markdown Content (Review & Edit)")
             
@@ -291,12 +318,28 @@ def main():
         with col1:
             st.write("") # Spacer
             
+            # --- MODIFICATION ---
+            # Re-assemble the final YAML from *edited* fields
+            
+            # Escape quotes in edited fields to create valid YAML
+            safe_title = edited_title.replace('"', '\\"')
+            safe_doi = edited_doi.replace('"', '\\"')
+            safe_year = edited_year.replace('"', '\\"')
+
+            final_yaml_str = "---\n"
+            final_yaml_str += f'title: "{safe_title}"\n'
+            final_yaml_str += "authors:\n"
+            final_yaml_str += edited_authors_str + "\n" # This string already has the YAML format
+            final_yaml_str += f'doi: "{safe_doi}"\n'
+            final_yaml_str += f'year: "{safe_year}"\n'
+            final_yaml_str += "---\n\n"
+            
             # Combine the *edited* parts for the final download
-            final_markdown_for_download = edited_yaml + edited_body
+            final_markdown_for_download = final_yaml_str + edited_body
             
             st.download_button(
                 label=f"Download `{dl_filename}`",
-                data=final_markdown_for_download, # Use the edited content
+                data=final_markdown_for_download, # Use the re-assembled content
                 file_name=dl_filename,
                 mime="text/markdown",
                 key=f"dl_{unique_key}" # Unique key per file
@@ -306,4 +349,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

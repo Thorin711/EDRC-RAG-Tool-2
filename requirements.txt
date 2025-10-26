@@ -1,15 +1,12 @@
 streamlit
-langchain-chroma
 openai
 sentence-transformers
-pysqlite3-binary
 tiktoken
 langchain-core
 langchain-text-splitters
 langchain-huggingface
 langchain-qdrant
 qdrant-client>=1.8.0
-llama-parse
-bs4 
 beautifulsoup4
 lxml
+requests

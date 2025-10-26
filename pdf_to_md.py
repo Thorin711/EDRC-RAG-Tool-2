@@ -228,7 +228,7 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
 
 def main():
     st.set_page_config(layout="wide", page_title="PDF to Vector DB Uploader")
-    st.title("塘 PDF to Vector DB Uploader")
+    st.title("PDF to Vector DB Uploader")
     st.markdown("Extract, review, and upload academic papers directly to your Qdrant database.")
 
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")

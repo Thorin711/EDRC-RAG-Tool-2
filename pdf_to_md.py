@@ -13,7 +13,6 @@ import time
 from bs4 import BeautifulSoup
 import unicodedata
 
-# --- NEW IMPORTS ---
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -21,29 +20,21 @@ from langchain_qdrant import Qdrant
 import qdrant_client
 
 # --- CONFIGURATION ---
-
-# 1. GROBID SERVER
 GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 REQUEST_TIMEOUT = 180
 MAX_RETRIES = 2
 RETRY_DELAY = 5
 
-# 2. EMBEDDING & VECTOR DB CONFIG
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
-# --- QDRANT CONFIG ---
 QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
 
-# These must match the collection names in your RAG app
 DB_OPTIONS = {
     "Full Database": "full_papers",
     "Journal Articles Only": "journal_papers",
     "EDRC Only": "edrc_papers",
 }
-# --- -------------------- ---
 
-
-# --- 1. GROBID API CALL LOGIC (Unchanged) ---
 
 def sanitize_filename(filename):
     """
@@ -95,8 +86,6 @@ def call_grobid_api(pdf_bytes, filename):
         st.write(f"Retrying in {RETRY_DELAY} seconds...")
         time.sleep(RETRY_DELAY)
     return None, "Unknown error after all retries."
-
-# --- 2. XML TO MARKDOWN LOGIC (Unchanged) ---
 
 def parse_xml_to_markdown(xml_content, filename_for_download):
     """
@@ -181,8 +170,6 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         st.exception(e)
         return None, None, None, None, None, f"Error parsing XML: {e}"
 
-# --- 3. NEW: CHUNKING & UPLOADING LOGIC ---
-
 @st.cache_resource
 def load_embedding_model():
     """Loads and caches the embedding model."""
@@ -239,14 +226,11 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
     )
     st.success("Upload to Qdrant complete!")
 
-# --- 4. STREAMLIT APP UI (Modified) ---
-
 def main():
     st.set_page_config(layout="wide", page_title="PDF to Vector DB Uploader")
     st.title("塘 PDF to Vector DB Uploader")
     st.markdown("Extract, review, and upload academic papers directly to your Qdrant database.")
 
-    # --- NEW: Load API Key and Embedding Model ---
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon="圷")
@@ -262,7 +246,6 @@ def main():
         st.error(f"Failed to load embedding model: {e}")
         st.stop()
 
-    # --- NEW: Collection Selection Radio Buttons ---
     st.subheader("Target Vector Collection")
     db_choice_key = st.radio(
         "Select the Qdrant collection to upload this document to:",
@@ -273,7 +256,6 @@ def main():
     st.markdown("---")
 
 
-    # --- File Uploader (Unchanged) ---
     uploaded_files = st.file_uploader(
         "Upload your PDF files", 
         type="pdf", 
@@ -312,7 +294,6 @@ def main():
             st.error(f"Failed to parse XML for `{uploaded_file.name}`: {dl_filename}")
             continue
 
-        # --- Display Results (Modified Layout) ---
         col1, col2 = st.columns([1, 2])
 
         with col1:

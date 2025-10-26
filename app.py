@@ -33,18 +33,16 @@ QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud
 
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
-COLLECTION_EDRC = "edrc_papers" # Corrected name to match migrator script
+COLLECTION_EDRC = "edrc_papers"
 
 # Pricing per million tokens (Input, Output)
 MODEL_COSTS = {
-    "gpt-5-nano": {"input": 0.05, "output": 0.40},  # Placeholder cost, update as needed
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},
     "gpt-5-mini": {"input": 0.25, "output": 2.00},
-    "gpt-5": {"input": 1.25, "output": 10.00}, # Placeholder cost, update as needed
+    "gpt-5": {"input": 1.25, "output": 10.00},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60}
 }
 
-
-# --- CACHING ---
 @st.cache_resource
 def load_embedding_model():
     """Loads and caches the sentence embedding model from Hugging Face.
@@ -86,14 +84,9 @@ def load_vector_store(_embeddings, _collection_name, _url, _api_key):
         collection_name=_collection_name,
         url=_url,
         api_key=_api_key,
-
-        # The key holding the main text
         content_payload_key="page_content", 
-
-        # The key holding the nested metadata dictionary
         metadata_payload_key="metadata"
     )
-    # --- END: MODIFIED SECTION ---
 
 
 @st.cache_data
@@ -274,7 +267,6 @@ def main():
     """
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
 
-    # --- Initialize Session State ---
     if 'final_query' not in st.session_state:
         st.session_state.final_query = ""
     if 'search_results' not in st.session_state:
@@ -291,11 +283,10 @@ def main():
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
     
-    # Check for API keys
     openai_api_key = st.secrets.get("OPENAI_API_KEY")
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     
-    api_key_present = bool(openai_api_key) # For disabling AI features
+    api_key_present = bool(openai_api_key)
 
     if not openai_api_key:
         st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
@@ -303,7 +294,6 @@ def main():
         st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect to database.", icon="🚨")
         st.stop()    
         
-    # Define database options (using Qdrant collection names)
     DB_OPTIONS = {
         "Full Database": COLLECTION_FULL,
         "Journal Articles Only": COLLECTION_JOURNAL,
@@ -318,12 +308,11 @@ def main():
     
     selected_collection_name = DB_OPTIONS[db_choice]
 
-    # --- Model Selection ---
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
     selected_model = st.selectbox(
         "Select AI Model for Summary:",
         options=available_models,
-        index=0,  # Default to gpt-5-nano
+        index=0,
         help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
     )
 
@@ -336,7 +325,6 @@ def main():
             qdrant_api_key
         )
         
-        # Count documents using the Qdrant client
         count_result = vector_store.client.count(
             collection_name=selected_collection_name, 
             exact=True

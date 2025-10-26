@@ -6,6 +6,7 @@ sentence-transformers
 pysqlite3-binary
 tiktoken
 langchain-qdrant 
+langchain
 qdrant-client>=1.8.0
 llama-parse
 bs4 

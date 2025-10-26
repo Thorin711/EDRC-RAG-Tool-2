@@ -221,8 +221,8 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
 # --- 3. STREAMLIT APP UI ---
 
 def main():
-    st.set_page_config(layout="wide", page_title="GROBID PDF Processor")
-    st.title("📄 GROBID PDF to Markdown Converter")
+    st.set_page_config(layout="wide", page_title=" PDF Processor")
+    st.title("📄 PDF to Markdown Converter")
     st.markdown("This app uses your personal GROBID server on Hugging Face to extract metadata and text from academic papers.")
 
     uploaded_files = st.file_uploader(
@@ -242,15 +242,11 @@ def main():
     
     for uploaded_file in uploaded_files:
         
-        #
-        # <-- THIS IS THE FIX -->
-        # Changed from .id to .file_id
-        #
         unique_key = uploaded_file.file_id 
         
         st.header(f"Processing: `{uploaded_file.name}`")
         
-        with st.spinner(f"Contacting your GROBID server... This can take 1-3 minutes if the server is waking up."):
+        with st.spinner(f"Contacting your GROBID server... This can take 10+ minutes if the server is waking up."):
             pdf_bytes = uploaded_file.getvalue()
             xml_result, error_msg = call_grobid_api(pdf_bytes, uploaded_file.name)
 

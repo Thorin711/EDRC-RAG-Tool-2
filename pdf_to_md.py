@@ -68,7 +68,7 @@ def call_grobid_api(pdf_bytes, filename):
     
     for attempt in range(MAX_RETRIES + 1):
         try:
-            st.write(f"Connecting to your GROBID server (Attempt {attempt + 1}/{MAX_RETRIES + 1})...")
+            st.write(f"Connecting to your server (Attempt {attempt + 1}/{MAX_RETRIES + 1})...")
             response = requests.post(
                 GROBID_API_URL,
                 files=multipart_payload, 
@@ -78,12 +78,12 @@ def call_grobid_api(pdf_bytes, filename):
             if response.status_code == 200:
                 return response.text, None
             else:
-                error_message = f"GROBID API returned an error (Status {response.status_code}):"
+                error_message = f"API returned an error (Status {response.status_code}):"
                 error_detail = response.text[:500] 
                 
                 if "Cannot invoke \"java.io.InputStream.close()\"" in error_detail:
                     error_message = (
-                        "GROBID server error: 'InputStream is null'. "
+                        "Server error: 'InputStream is null'. "
                         "This often means the PDF file is corrupt, encrypted, "
                         "or password-protected. Please try a different PDF."
                     )
@@ -211,9 +211,9 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
 # --- 3. STREAMLIT APP UI ---
 
 def main():
-    st.set_page_config(layout="wide", page_title="GROBID PDF Processor")
-    st.title("📄 GROBID PDF to Markdown Converter")
-    st.markdown("This app uses your personal GROBID server on Hugging Face to extract metadata and text from academic papers.")
+    st.set_page_config(layout="wide", page_title="PDF Processor")
+    st.title("📄 PDF to Markdown Converter")
+    st.markdown("This app uses your personal server on Hugging Face to extract metadata and text from academic papers.")
 
     uploaded_files = st.file_uploader(
         "Upload your PDF files", 
@@ -232,15 +232,11 @@ def main():
     
     for uploaded_file in uploaded_files:
         
-        #
-        # <-- THIS IS THE FIX -->
-        # Changed from .id to .file_id
-        #
         unique_key = uploaded_file.file_id 
         
         st.header(f"Processing: `{uploaded_file.name}`")
         
-        with st.spinner(f"Contacting your GROBID server... This can take 1-3 minutes if the server is waking up."):
+        with st.spinner(f"Contacting your server... This can take 10 minutes if the server is waking up."):
             pdf_bytes = uploaded_file.getvalue()
             xml_result, error_msg = call_grobid_api(pdf_bytes, uploaded_file.name)
 

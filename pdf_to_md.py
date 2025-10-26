@@ -14,11 +14,11 @@ from bs4 import BeautifulSoup
 import unicodedata
 
 # --- NEW IMPORTS ---
-from langchain.docstore.document import Document
-from langchain.text_splitter import MarkdownHeaderTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import Qdrant
-import qdrant_client # To ensure it's installed
+import qdrant_client
 
 # --- CONFIGURATION ---
 

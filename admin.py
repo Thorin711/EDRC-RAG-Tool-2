@@ -17,6 +17,8 @@ COLLECTION_FULL = "full_papers"
 COLLECTION_JOURNAL = "journal_papers"
 COLLECTION_EDRC = "edrc_papers"
 
+ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
+
 # --- CACHING ---
 @st.cache_resource
 def load_embedding_model():
@@ -146,7 +148,7 @@ def admin_app():
         
         edit_tab, delete_tab = st.tabs(["Edit Metadata", "⛔ Delete Document"])
 
-        # --- EDIT TAB (Existing Logic) ---
+        # --- EDIT TAB ---
         with edit_tab:
             st.subheader("Update Metadata Fields")
             st.write("Changes here will apply to **all** selected chunks.")
@@ -157,28 +159,76 @@ def admin_app():
                 new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
                 new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
                 
-                submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
+                st.markdown("---") # Visual separator
+                
+                # +++ ADD THIS CHECKBOX +++
+                apply_all_edit = st.checkbox(
+                    "Apply these metadata changes to ALL collections (full_papers, journal_papers, edrc_papers)",
+                    value=False,
+                    help="If checked, this update will be applied to documents with the *original* title in all three collections."
+                )
+                
+                submitted = st.form_submit_button(f"Save Changes", type="primary")
 
                 if submitted:
-                    with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
-                        try:
-                            payload_to_merge = {
-                                "metadata": {
-                                    "title": new_title,
-                                    "authors": new_authors,
-                                    "year": int(new_year),
-                                    "doi": new_doi
-                                }
-                            }
+                    
+                    payload_to_merge = {
+                        "metadata": {
+                            "title": new_title,
+                            "authors": new_authors,
+                            "year": int(new_year),
+                            "doi": new_doi
+                        }
+                    }
 
-                            qdrant_client.set_payload(
-                                collection_name=selected_collection_name,
-                                points=point_ids_to_update,  
-                                payload=payload_to_merge,   
-                                wait=True
-                            )
+                    # Determine which collections to update
+                    if apply_all_edit:
+                        collections_to_update = ALL_COLLECTIONS
+                        st.info("Applying changes to ALL collections...")
+                    else:
+                        collections_to_update = [selected_collection_name]
+                        st.info(f"Applying changes to {selected_collection_name} only...")
+
+                    with st.spinner(f"Saving changes..."):
+                        try:
+                            total_chunks_updated = 0
                             
-                            st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
+                            # +++ LOOP THROUGH EACH COLLECTION +++
+                            for collection_name in collections_to_update:
+                                # Find the points in *this specific collection* by the *original* title
+                                title_filter = Filter(
+                                    must=[
+                                        FieldCondition(
+                                            key="metadata.title",
+                                            match=MatchText(text=current_title) # Use original title to find
+                                        )
+                                    ]
+                                )
+                                points_to_update, _ = qdrant_client.scroll(
+                                    collection_name=collection_name,
+                                    scroll_filter=title_filter,
+                                    limit=500, # Set a reasonable limit
+                                    with_payload=False # Don't need payload, just IDs
+                                )
+                                
+                                # Get the IDs to update
+                                point_ids = [point.id for point in points_to_update]
+                                
+                                if not point_ids:
+                                    st.write(f"ℹ️ No document matching '{current_title}' found in `{collection_name}`. Skipping.")
+                                    continue
+                                
+                                # Apply the new payload to the found IDs
+                                qdrant_client.set_payload(
+                                    collection_name=collection_name,
+                                    points=point_ids,  
+                                    payload=payload_to_merge, # Use new metadata
+                                    wait=True
+                                )
+                                st.write(f"✅ Updated {len(point_ids)} chunks in `{collection_name}`.")
+                                total_chunks_updated += len(point_ids)
+
+                            st.success(f"Metadata updated successfully for a total of {total_chunks_updated} chunks! 🎉")
                             st.balloons()
                             
                             # Clear state to be ready for the next search
@@ -191,23 +241,31 @@ def admin_app():
 
 
         # --- DELETE TAB ---
+        # --- DELETE TAB ---
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")
-            st.warning(f"**WARNING:** You are about to permanently delete **{len(selected_points)}** document chunks associated with this title. This action **cannot** be undone.")
+            st.warning(f"**WARNING:** You are about to permanently delete document chunks associated with this title. This action **cannot** be undone.")
             
             st.markdown("---")
             
-            # Wrap all interactive elements in a form
             with st.form("delete_form"):
-                confirm_check = st.checkbox(f"I understand I am permanently deleting {len(selected_points)} chunks.")
+                confirm_check = st.checkbox(f"I understand I am permanently deleting chunks for '{current_title}'.")
                 confirm_title = st.text_input(
                     "To confirm, please type the *exact* title of the document:", 
                     placeholder="Type title to confirm..."
                 )
                 
+                st.markdown("---") # Visual separator
+                
+                # +++ ADD THIS CHECKBOX +++
+                apply_all_delete = st.checkbox(
+                    "Permanently delete from ALL collections (full_papers, journal_papers, edrc_papers)",
+                    value=False,
+                    help="If checked, this will delete all chunks matching this title from all three collections."
+                )
+                
                 st.markdown("---")
                 
-                # Change the button to a form_submit_button
                 submitted_delete = st.form_submit_button(
                     "DELETE DOCUMENT (PERMANENTLY)", 
                     type="primary", 
@@ -215,18 +273,55 @@ def admin_app():
                 )
 
                 if submitted_delete:
-                    # Move the confirmation check to *after* the button is pressed
                     is_confirmed = confirm_check and (confirm_title == current_title)
 
                     if is_confirmed:
-                        with st.spinner(f"Deleting {len(point_ids_to_update)} chunks..."):
+                        
+                        # Determine which collections to delete from
+                        if apply_all_delete:
+                            collections_to_delete_from = ALL_COLLECTIONS
+                            st.info("Deleting from ALL collections...")
+                        else:
+                            collections_to_delete_from = [selected_collection_name]
+                            st.info(f"Deleting from {selected_collection_name} only...")
+
+                        with st.spinner(f"Deleting document chunks..."):
                             try:
-                                qdrant_client.delete(
-                                    collection_name=selected_collection_name,
-                                    points_selector=point_ids_to_update
-                                )
+                                total_chunks_deleted = 0
                                 
-                                st.success(f"Successfully deleted {len(point_ids_to_update)} chunks! 🗑️")
+                                # +++ LOOP THROUGH EACH COLLECTION +++
+                                for collection_name in collections_to_delete_from:
+                                    # Find the points in this collection by title
+                                    title_filter = Filter(
+                                        must=[
+                                            FieldCondition(
+                                                key="metadata.title",
+                                                match=MatchText(text=current_title)
+                                            )
+                                        ]
+                                    )
+                                    points_to_delete, _ = qdrant_client.scroll(
+                                        collection_name=collection_name,
+                                        scroll_filter=title_filter,
+                                        limit=500,
+                                        with_payload=False
+                                    )
+                                    
+                                    point_ids = [point.id for point in points_to_delete]
+                                    
+                                    if not point_ids:
+                                        st.write(f"ℹ️ No document matching '{current_title}' found in `{collection_name}`. Skipping.")
+                                        continue
+
+                                    # Perform the delete
+                                    qdrant_client.delete(
+                                        collection_name=collection_name,
+                                        points_selector=point_ids
+                                    )
+                                    st.write(f"🗑️ Deleted {len(point_ids)} chunks from `{collection_name}`.")
+                                    total_chunks_deleted += len(point_ids)
+                                
+                                st.success(f"Successfully deleted a total of {total_chunks_deleted} chunks! 🗑️")
                                 
                                 # Clear state
                                 st.session_state.search_results = None
@@ -236,7 +331,6 @@ def admin_app():
                             except Exception as e:
                                 st.error(f"An error occurred during deletion: {e}")
                     else:
-                        # If confirmation fails, show an error *inside* the form
                         st.error("Confirmation failed. Please check the box AND type the title correctly.")
 
 

@@ -245,13 +245,21 @@ def main():
         st.error(f"Failed to load embedding model: {e}")
         st.stop()
 
-    st.subheader("Target Vector Collection")
-    db_choice_key = st.radio(
-        "Select the Qdrant collection to upload this document to:",
-        options=DB_OPTIONS.keys(),
-        horizontal=True,
+    st.subheader("Target Vector Collection(s)")
+    
+    # Use st.multiselect to allow multiple selections
+    selected_db_keys = st.multiselect(
+        "Select one or more Qdrant collections to upload this document to:",
+        options=list(DB_OPTIONS.keys()),
+        default=list(DB_OPTIONS.keys())[0]  # Default to the first item
     )
-    selected_collection_name = DB_OPTIONS[db_choice_key]
+    
+    # Map the selected keys (e.g., "Full Database") to the actual collection names
+    selected_collection_names = [DB_OPTIONS[key] for key in selected_db_keys]
+    
+    if not selected_collection_names:
+        st.warning("Please select at least one target collection to enable upload.")
+        
     st.markdown("---")
 
 

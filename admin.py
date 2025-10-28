@@ -190,45 +190,54 @@ def admin_app():
                             st.error(f"An error occurred: {e}")
 
         # --- DELETE TAB (New Secure Logic) ---
+        # --- DELETE TAB (New Secure Logic) ---
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")
             st.warning(f"**WARNING:** You are about to permanently delete **{len(selected_points)}** document chunks associated with this title. This action **cannot** be undone.")
             
             st.markdown("---")
             
-            confirm_check = st.checkbox(f"I understand I am permanently deleting {len(selected_points)} chunks.")
-            confirm_title = st.text_input(
-                "To confirm, please type the *exact* title of the document:", 
-                placeholder="Type title to confirm..."
-            )
-            
-            st.markdown("---")
+            # Wrap all interactive elements in a form
+            with st.form("delete_form"):
+                confirm_check = st.checkbox(f"I understand I am permanently deleting {len(selected_points)} chunks.")
+                confirm_title = st.text_input(
+                    "To confirm, please type the *exact* title of the document:", 
+                    placeholder="Type title to confirm..."
+                )
+                
+                st.markdown("---")
+                
+                # Change the button to a form_submit_button
+                submitted_delete = st.form_submit_button(
+                    "DELETE DOCUMENT (PERMANENTLY)", 
+                    type="primary", 
+                    use_container_width=True
+                )
 
-            # Disable button until both conditions are met
-            is_confirmed = confirm_check and (confirm_title == current_title)
-            
-            if st.button("DELETE DOCUMENT (PERMANENTLY)", type="primary", disabled=not is_confirmed, use_container_width=True):
-                if is_confirmed:
-                    with st.spinner(f"Deleting {len(point_ids_to_update)} chunks..."):
-                        try:
-                            # Use Qdrant client to delete points by their IDs
-                            qdrant_client.delete(
-                                collection_name=selected_collection_name,
-                                points_selector=point_ids_to_update
-                            )
-                            
-                            st.success(f"Successfully deleted {len(point_ids_to_update)} chunks! 🗑️")
-                            
-                            # Clear state
-                            st.session_state.search_results = None
-                            st.session_state.selected_points = []
-                            st.rerun()
+                if submitted_delete:
+                    # Move the confirmation check to *after* the button is pressed
+                    is_confirmed = confirm_check and (confirm_title == current_title)
 
-                        except Exception as e:
-                            st.error(f"An error occurred during deletion: {e}")
-                else:
-                    # This case should be rare due to the 'disabled' flag, but it's good practice.
-                    st.error("Confirmation failed. Please check the box and type the title correctly.")
+                    if is_confirmed:
+                        with st.spinner(f"Deleting {len(point_ids_to_update)} chunks..."):
+                            try:
+                                qdrant_client.delete(
+                                    collection_name=selected_collection_name,
+                                    points_selector=point_ids_to_update
+                                )
+                                
+                                st.success(f"Successfully deleted {len(point_ids_to_update)} chunks! 🗑️")
+                                
+                                # Clear state
+                                st.session_state.search_results = None
+                                st.session_state.selected_points = []
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error(f"An error occurred during deletion: {e}")
+                    else:
+                        # If confirmation fails, show an error *inside* the form
+                        st.error("Confirmation failed. Please check the box AND type the title correctly.")
 
 
 if __name__ == "__main__":

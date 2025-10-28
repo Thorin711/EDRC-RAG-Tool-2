@@ -212,7 +212,7 @@ def admin_app():
                     with st.spinner(f"Deleting {len(point_ids_to_update)} chunks..."):
                         try:
                             # Use Qdrant client to delete points by their IDs
-                            qdrant_client.delete_points(
+                            qdrant_client.delete(
                                 collection_name=selected_collection_name,
                                 points_selector=point_ids_to_update
                             )

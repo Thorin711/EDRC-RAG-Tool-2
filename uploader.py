@@ -56,7 +56,7 @@ def call_grobid_api(pdf_bytes, filename):
     Calls the configured GROBID API to process a PDF.
     """
     if GROBID_API_URL.startswith("https://YOUR-HF-USERNAME"):
-        st.error("Please update the `GROBID_API_URL` with your HF Space URL.")
+        st.error("Please update the `GROBID_API_URL` with your HF Space URL.", icon="圷")
         return None, "Configuration Error"
 
     safe_filename = sanitize_filename(filename)
@@ -223,7 +223,7 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
         prefer_grpc=True,
         force_recreate=False 
     )
-    st.success("Upload to Qdrant complete!")
+    st.success(f"Upload to '{collection_name}' complete!")
 
 def main():
     st.set_page_config(layout="wide", page_title="PDF to Vector DB Uploader")
@@ -232,11 +232,11 @@ def main():
 
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.")
+        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon=":(")
         st.stop()
         
     if QDRANT_URL == "https://YOUR-QDRANT-CLOUD-URL.com":
-        st.error("Please update the `QDRANT_URL` variable in the script.")
+        st.error("Please update the `QDRANT_URL` variable in the script.", icon="圷")
         st.stop()
 
     try:
@@ -245,9 +245,8 @@ def main():
         st.error(f"Failed to load embedding model: {e}")
         st.stop()
 
+    # --- MODIFIED: Changed from st.radio to st.multiselect ---
     st.subheader("Target Vector Collection(s)")
-    
-    # Use st.multiselect to allow multiple selections
     selected_db_keys = st.multiselect(
         "Select one or more Qdrant collections to upload this document to:",
         options=list(DB_OPTIONS.keys()),
@@ -261,6 +260,7 @@ def main():
         st.warning("Please select at least one target collection to enable upload.")
         
     st.markdown("---")
+    # --- END OF MODIFICATION ---
 
 
     uploaded_files = st.file_uploader(
@@ -356,50 +356,62 @@ def main():
             "Confirm & Upload to Vector DB", 
             type="primary", 
             key=f"upload_{unique_key}",
-            use_container_width=True  # <-- This makes it full-width
+            use_container_width=True
         ):
-            with st.spinner(f"Uploading `{edited_title}` to Qdrant collection '{selected_collection_name}'..."):
-                try:
-                    # 1. Create the metadata dictionary for the chunks
-                    # Parse authors string back into a simple comma-separated string
-                    authors_list = [
-                        line.strip().lstrip('-').lstrip().strip('"') 
-                        for line in edited_authors_str.split('\n') 
-                        if line.strip() and line.strip() != "-"
-                    ]
-                    authors_string = ", ".join(authors_list)
-                    
-                    doc_metadata = {
-                        "title": edited_title,
-                        "authors": authors_string,
-                        "doi": edited_doi,
-                        "source": uploaded_file.name # Use the original PDF name as source
-                    }
-                    
-                    # Add year only if it's a valid integer
-                    try:
-                        doc_metadata["year"] = int(edited_year)
-                    except ValueError:
-                        st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
-                        pass
-
-                    # 2. Chunk the document (using the full text, including YAML)
-                    # The chunker will use headers but the YAML will be in the first chunk.
-                    # This is fine as the metadata is applied to all chunks anyway.
-                    chunks = chunk_document(final_markdown_for_download, doc_metadata)
-                    
-                    # 3. Upload the chunks
-                    upload_chunks(
-                        chunks=chunks,
-                        embedding_model=embeddings,
-                        url=QDRANT_URL,
-                        api_key=qdrant_api_key,
-                        collection_name=selected_collection_name # <-- MODIFIED
-                    )
+            # --- MODIFIED: Check if any collections are selected ---
+            if not selected_collection_names:
+                st.error("Please select at least one target collection above.")
+            else:
+                # --- MODIFIED: This fixes the NameError ---
+                spinner_text = f"Uploading `{edited_title}` to {len(selected_collection_names)} collection(s)..."
                 
-                except Exception as e:
-                    st.error(f"An error occurred during upload: {e}")
-                    st.exception(e)
+                with st.spinner(spinner_text):
+                    try:
+                        # 1. Create the metadata dictionary (Done ONCE)
+                        authors_list = [
+                            line.strip().lstrip('-').lstrip().strip('"') 
+                            for line in edited_authors_str.split('\n') 
+                            if line.strip() and line.strip() != "-"
+                        ]
+                        authors_string = ", ".join(authors_list)
+                        
+                        doc_metadata = {
+                            "title": edited_title,
+                            "authors": authors_string,
+                            "doi": edited_doi,
+                            "source": uploaded_file.name
+                        }
+                        
+                        try:
+                            doc_metadata["year"] = int(edited_year)
+                        except ValueError:
+                            st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
+                            pass
+
+                        # 2. Chunk the document (Done ONCE)
+                        # The chunker will use headers but the YAML will be in the first chunk.
+                        # This is fine as the metadata is applied to all chunks anyway.
+                        chunks = chunk_document(final_markdown_for_download, doc_metadata)
+                        
+                        # --- MODIFIED: Loop and upload to EACH selected collection ---
+                        st.write(f"Document chunked. Starting uploads...")
+                        
+                        for collection_name in selected_collection_names:
+                            st.write(f"Uploading to collection: `{collection_name}`")
+                            upload_chunks(
+                                chunks=chunks,
+                                embedding_model=embeddings,
+                                url=QDRANT_URL,
+                                api_key=qdrant_api_key,
+                                collection_name=collection_name  # <-- Use the loop variable
+                            )
+                        
+                        st.success(f"Successfully uploaded document to all {len(selected_collection_names)} selected collections! 🎉")
+
+                    except Exception as e:
+                        st.error(f"An error occurred during upload: {e}")
+                        st.exception(e)
+        # --- END OF MODIFICATION ---
 
         st.markdown("---")
 

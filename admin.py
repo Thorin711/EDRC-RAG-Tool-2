@@ -189,8 +189,8 @@ def admin_app():
                         except Exception as e:
                             st.error(f"An error occurred: {e}")
 
-        # --- DELETE TAB (New Secure Logic) ---
-        # --- DELETE TAB (New Secure Logic) ---
+
+        # --- DELETE TAB ---
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")
             st.warning(f"**WARNING:** You are about to permanently delete **{len(selected_points)}** document chunks associated with this title. This action **cannot** be undone.")

@@ -56,7 +56,7 @@ def call_grobid_api(pdf_bytes, filename):
     Calls the configured GROBID API to process a PDF.
     """
     if GROBID_API_URL.startswith("https://YOUR-HF-USERNAME"):
-        st.error("Please update the `GROBID_API_URL` with your HF Space URL.", icon="圷")
+        st.error("Please update the `GROBID_API_URL` with your HF Space URL.")
         return None, "Configuration Error"
 
     safe_filename = sanitize_filename(filename)
@@ -232,11 +232,11 @@ def main():
 
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon=":(")
+        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.")
         st.stop()
         
     if QDRANT_URL == "https://YOUR-QDRANT-CLOUD-URL.com":
-        st.error("Please update the `QDRANT_URL` variable in the script.", icon="圷")
+        st.error("Please update the `QDRANT_URL` variable in the script.")
         st.stop()
 
     try:

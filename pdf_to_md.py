@@ -214,7 +214,6 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
     st.write(f"Uploading {len(chunks)} chunks to Qdrant collection: '{collection_name}'...")
     
     # This will add to the collection. 
-    # Set force_recreate=True if you want to wipe the collection first.
     Qdrant.from_documents(
         documents=chunks,
         embedding=embedding_model,
@@ -233,7 +232,7 @@ def main():
 
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon="圷")
+        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon=":(")
         st.stop()
         
     if QDRANT_URL == "https://YOUR-QDRANT-CLOUD-URL.com":
@@ -275,7 +274,7 @@ def main():
         unique_key = uploaded_file.file_id 
         st.header(f"Processing: `{uploaded_file.name}`")
         
-        with st.spinner(f"Contacting server... This can take 1-3 minutes if it's waking up."):
+        with st.spinner(f"Contacting server... This can take 10+ minutes if it's waking up."):
             pdf_bytes = uploaded_file.getvalue()
             xml_result, error_msg = call_grobid_api(pdf_bytes, uploaded_file.name)
 

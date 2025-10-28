@@ -87,7 +87,7 @@ def admin_app():
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
 
-    st.header("2. Find Document Chunks to Edit")
+    st.header("2. Find Document Chunks")
     search_query = st.text_input("Search for a document by its title:")
     
     if st.button("Find Documents"):
@@ -125,60 +125,111 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    st.header("3. Edit Metadata")
+    # --- Section 3: Edit or Delete (NEW TABS) ---
     if st.session_state.selected_points:
         selected_points = st.session_state.selected_points
-        st.markdown(f"**Found {len(selected_points)} document chunks for this title. You are about to edit all of them.**")
-        
         point_ids_to_update = [point.id for point in selected_points]
-        with st.expander("Show IDs to be updated"):
-            st.json(point_ids_to_update)
         
-        # Get metadata from the first chunk to pre-fill the form
+        # Get metadata from the first chunk to use everywhere
         first_point_payload = selected_points[0].payload
         current_meta = first_point_payload.get("metadata", {}).copy()
+        current_title = current_meta.get('title', '')
         
-        st.markdown(f"**Content Snippet (from first selected item):**\n```\n{first_point_payload.get('page_content', '')[:250]}...\n```")
+        st.markdown(f"---")
+        st.header(f"3. Actions for Document (Found {len(selected_points)} chunks)")
+        st.markdown(f"**Title:** `{current_title}`")
+        st.markdown(f"**Content Snippet (from first chunk):**\n```\n{first_point_payload.get('page_content', '')[:250]}...\n```")
+        
+        with st.expander("Show all chunk IDs to be affected"):
+            st.json(point_ids_to_update)
+        
+        
+        edit_tab, delete_tab = st.tabs(["Edit Metadata", "⛔ Delete Document"])
 
-        with st.form("edit_form"):
-            st.subheader("Update Fields (will apply to all selected items)")
+        # --- EDIT TAB (Existing Logic) ---
+        with edit_tab:
+            st.subheader("Update Metadata Fields")
+            st.write("Changes here will apply to **all** selected chunks.")
             
-            new_title = st.text_input("Title", value=current_meta.get('title', ''))
-            new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
-            new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
-            new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
-            
-            submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
+            with st.form("edit_form"):
+                new_title = st.text_input("Title", value=current_title)
+                new_authors = st.text_input("Authors", value=current_meta.get('authors', ''))
+                new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
+                new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
+                
+                submitted = st.form_submit_button(f"Save Changes to {len(selected_points)} Chunks", type="primary")
 
-            if submitted:
-                with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
-                    try:
-                        payload_to_merge = {
-                            "metadata": {
-                                "title": new_title,
-                                "authors": new_authors,
-                                "year": int(new_year),
-                                "doi": new_doi
+                if submitted:
+                    with st.spinner(f"Saving changes to {len(point_ids_to_update)} chunks..."):
+                        try:
+                            payload_to_merge = {
+                                "metadata": {
+                                    "title": new_title,
+                                    "authors": new_authors,
+                                    "year": int(new_year),
+                                    "doi": new_doi
+                                }
                             }
-                        }
 
-                        qdrant_client.set_payload(
-                            collection_name=selected_collection_name,
-                            points=point_ids_to_update,  
-                            payload=payload_to_merge,   
-                            wait=True
-                        )
-                        
-                        st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
-                        st.balloons()
-                        
-                        # Clear state to be ready for the next search
-                        st.session_state.search_results = None
-                        st.session_state.selected_points = []
-                        st.rerun() # Rerun to hide the form
+                            qdrant_client.set_payload(
+                                collection_name=selected_collection_name,
+                                points=point_ids_to_update,  
+                                payload=payload_to_merge,   
+                                wait=True
+                            )
+                            
+                            st.success(f"Metadata updated successfully for {len(point_ids_to_update)} chunks! 🎉")
+                            st.balloons()
+                            
+                            # Clear state to be ready for the next search
+                            st.session_state.search_results = None
+                            st.session_state.selected_points = []
+                            st.rerun() # Rerun to hide the form
 
-                    except Exception as e:
-                        st.error(f"An error occurred: {e}")
+                        except Exception as e:
+                            st.error(f"An error occurred: {e}")
+
+        # --- DELETE TAB (New Secure Logic) ---
+        with delete_tab:
+            st.subheader("⛔ Danger Zone: Delete Document")
+            st.warning(f"**WARNING:** You are about to permanently delete **{len(selected_points)}** document chunks associated with this title. This action **cannot** be undone.")
+            
+            st.markdown("---")
+            
+            confirm_check = st.checkbox(f"I understand I am permanently deleting {len(selected_points)} chunks.")
+            confirm_title = st.text_input(
+                "To confirm, please type the *exact* title of the document:", 
+                placeholder="Type title to confirm..."
+            )
+            
+            st.markdown("---")
+
+            # Disable button until both conditions are met
+            is_confirmed = confirm_check and (confirm_title == current_title)
+            
+            if st.button("DELETE DOCUMENT (PERMANENTLY)", type="primary", disabled=not is_confirmed, use_container_width=True):
+                if is_confirmed:
+                    with st.spinner(f"Deleting {len(point_ids_to_update)} chunks..."):
+                        try:
+                            # Use Qdrant client to delete points by their IDs
+                            qdrant_client.delete_points(
+                                collection_name=selected_collection_name,
+                                points_selector=point_ids_to_update
+                            )
+                            
+                            st.success(f"Successfully deleted {len(point_ids_to_update)} chunks! 🗑️")
+                            
+                            # Clear state
+                            st.session_state.search_results = None
+                            st.session_state.selected_points = []
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"An error occurred during deletion: {e}")
+                else:
+                    # This case should be rare due to the 'disabled' flag, but it's good practice.
+                    st.error("Confirmation failed. Please check the box and type the title correctly.")
+
 
 if __name__ == "__main__":
     admin_app()

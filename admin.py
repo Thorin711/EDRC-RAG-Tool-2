@@ -42,7 +42,7 @@ def admin_app():
     if "selected_points" not in st.session_state:
         st.session_state.selected_points = [] 
     if "selected_collection" not in st.session_state:
-        st.session_state.selected_collection = COLLECTION_FULL
+        st.session_state.selected_collection = COLLECTION_EDRC
 
     qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
     if not qdrant_api_key:

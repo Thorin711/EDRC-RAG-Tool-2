@@ -400,18 +400,16 @@ def main():
                     # Build search arguments
                     search_kwargs = {"k": k_results}
                     
-                    # --- START: MODIFIED SECTION (DATE FILTER 1) ---
                     if use_date_filter:
-                        search_kwargs["filter"] = {
-                            "must": [
+                        search_kwargs["filter"] = Filter(
+                            must=[
                                 FieldCondition(
                                     # Use "metadata.year" to access the nested key
                                     key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
-                        }
-                    # --- END: MODIFIED SECTION (DATE FILTER 1) ---
+                        )
                     
                     results = vector_store.similarity_search(user_query, **search_kwargs)
                     st.session_state.search_results = results
@@ -434,16 +432,15 @@ def main():
                     search_kwargs = {"k": k_results}
 
                     if use_date_filter:
-                        
                         search_kwargs["filter"] = Filter(
                             must=[
                                 FieldCondition(
-                                    key="metadata.year",
+                                    # Use "metadata.year" to access the nested key
+                                    key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         )
-                    # --- END: MODIFIED SECTION (DATE FILTER 2) ---
 
                     st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                 except Exception as e:

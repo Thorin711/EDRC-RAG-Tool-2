@@ -432,18 +432,17 @@ def main():
                 try:
                     # Build search arguments
                     search_kwargs = {"k": k_results}
-                    
-                    # --- START: MODIFIED SECTION (DATE FILTER 2) ---
+
                     if use_date_filter:
-                        search_kwargs["filter"] = {
-                            "must": [
+                        
+                        search_kwargs["filter"] = Filter(
+                            must=[
                                 FieldCondition(
-                                    # Use "metadata.year" to access the nested key
-                                    key="metadata.year", 
+                                    key="metadata.year",
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
-                        }
+                        )
                     # --- END: MODIFIED SECTION (DATE FILTER 2) ---
 
                     st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
@@ -491,7 +490,7 @@ def main():
             if proceed_with_summary:
                 with st.spinner("Thinking..."):
                     openai.api_key = st.secrets["OPENAI_API_KEY"]
-                    summary, token_info = summarize_results_with_llm(st.session_state.original__query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
+                    summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
 
                     if summary and token_info:
                         st.session_state.summary_content = summary

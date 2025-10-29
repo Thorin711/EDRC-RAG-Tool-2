@@ -511,7 +511,7 @@ def main():
                     base_name = source_path.split("\\")[-1]
                     source = base_name.split('.')[0]
                     if len(source) <= 4:
-                        source = base_name[:-2]
+                        source = base_name[:-3]
                     year = doc.metadata.get('year', 'Unknown Year')
                     doi = doc.metadata.get('doi', '')
                     

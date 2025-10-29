@@ -405,7 +405,7 @@ def main():
                             must=[
                                 FieldCondition(
                                     # Use "metadata.year" to access the nested key
-                                    key="year", 
+                                    key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
@@ -436,7 +436,7 @@ def main():
                             must=[
                                 FieldCondition(
                                     # Use "metadata.year" to access the nested key
-                                    key="year", 
+                                    key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]

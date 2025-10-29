@@ -20,7 +20,7 @@ features.
 import streamlit as st
 import os
 from langchain_qdrant import Qdrant
-from qdrant_client.http.models import FieldCondition, Range
+from qdrant_client.http.models import Filter, FieldCondition, Range
 from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken

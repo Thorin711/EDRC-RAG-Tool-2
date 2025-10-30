@@ -308,7 +308,7 @@ def main():
     
     selected_collection_name = DB_OPTIONS[db_choice]
 
-    available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5"]
+    available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
     selected_model = st.selectbox(
         "Select AI Model for Summary:",
         options=available_models,

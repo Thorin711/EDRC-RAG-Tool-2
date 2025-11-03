@@ -143,3 +143,10 @@ This app is for correcting or updating metadata for documents already in the dat
 -   `admin.py`: A Streamlit utility app for batch-editing document metadata in Qdrant.
 -   `requirements.txt`: A list of the Python packages required to run the project.
 -   `README.md`: This file.
+
+## To Do
+
+- Improve Database metadatas
+- Fix Stability
+- Add more files
+- Double check files in EDRC only

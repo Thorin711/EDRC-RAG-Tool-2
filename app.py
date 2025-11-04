@@ -277,6 +277,7 @@ def main():
     """
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
 
+    # --- START: MODIFIED SECTION (State Initialization) ---
     if 'final_query' not in st.session_state:
         st.session_state.final_query = ""
     if 'search_results' not in st.session_state:
@@ -289,10 +290,25 @@ def main():
         st.session_state.summary_content = None
     if 'summary_token_info' not in st.session_state:
         st.session_state.summary_token_info = None
-        
-    # --- ADDED: Initialize selected_collection in state ---
     if 'selected_collection' not in st.session_state:
         st.session_state.selected_collection = COLLECTION_FULL # Default to the first option
+
+    # Initialize form widget states if they don't exist
+    if "user_query_input" not in st.session_state:
+        st.session_state.user_query_input = ""
+    if "k_results_input" not in st.session_state:
+        st.session_state.k_results_input = 10
+    if "enhanced_search_toggle" not in st.session_state:
+        st.session_state.enhanced_search_toggle = True
+    if "summary_toggle" not in st.session_state:
+        st.session_state.summary_toggle = True
+    if "start_date_input" not in st.session_state:
+        st.session_state.start_date_input = 2015
+    if "end_date_input" not in st.session_state:
+        st.session_state.end_date_input = 2024
+    if "date_filter_toggle" not in st.session_state:
+        st.session_state.date_filter_toggle = False
+    # --- END: MODIFIED SECTION ---
 
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
@@ -384,58 +400,63 @@ def main():
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
-    # --- START: MODIFIED SECTION (Added Keys to Form) ---
+    # --- START: MODIFIED SECTION (Removed 'value' from Form) ---
     with st.form("search_form"):
         user_query = st.text_input(
             "Ask a question:", 
             placeholder="e.g., What are the effects of policy on renewable energy adoption?",
-            key="user_query_input" # <-- ADDED KEY
+            key="user_query_input" 
         )
         
         col1, col2, col3 = st.columns([5, 2, 3])
         with col1:
             k_results = st.slider(
                 "Number of results to return:", 
-                min_value=1, max_value=30, value=10, 
-                key="k_results_input" # <-- ADDED KEY
+                min_value=1, max_value=30, 
+                key="k_results_input"
+                # value=10, <-- REMOVED
             )
         with col2:
             use_enhanced_search = st.toggle(
                 "AI-Enhanced Search",
-                value=True,
                 help="Uses an AI model to rephrase your query.",
                 disabled=not api_key_present,
-                key="enhanced_search_toggle" # <-- ADDED KEY
+                key="enhanced_search_toggle"
+                # value=True, <-- REMOVED
             )
         with col3:
             generate_summary = st.toggle(
                 "Generate AI Summary",
-                value=True,
                 help="Uses an AI model to summarize the search results.",
                 disabled=not api_key_present,
-                key="summary_toggle" # <-- ADDED KEY
+                key="summary_toggle"
+                # value=True, <-- REMOVED
             )
 
         # --- Date Range Selection ---
         date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
         with date_col1:
             start_date = st.number_input(
-                "Start Year", min_value=1900, max_value=2100, value=2015, step=1,
-                key="start_date_input" # <-- ADDED KEY
+                "Start Year", min_value=1900, max_value=2100, step=1,
+                key="start_date_input"
+                # value=2015, <-- REMOVED
             )
         with date_col2:
             end_date = st.number_input(
-                "End Year", min_value=1900, max_value=2100, value=2024, step=1,
-                key="end_date_input" # <-- ADDED KEY
+                "End Year", min_value=1900, max_value=2100, step=1,
+                key="end_date_input"
+                # value=2024, <-- REMOVED
             )
         with date_col3:
             use_date_filter = st.checkbox(
-                "Filter by year", value=False, 
-                key="date_filter_toggle" # <-- ADDED KEY
+                "Filter by year", 
+                key="date_filter_toggle"
+                # value=False, <-- REMOVED
             )
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
     # --- END: MODIFIED SECTION ---
+
 
     # --- Main Logic ---
     if submitted and user_query:

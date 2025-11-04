@@ -279,6 +279,9 @@ def main():
         st.session_state.summary_content = None
     if 'summary_token_info' not in st.session_state:
         st.session_state.summary_token_info = None
+        
+    if 'selected_collection' not in st.session_state:
+        st.session_state.selected_collection = COLLECTION_FULL # Default to the first option
 
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
@@ -307,6 +310,19 @@ def main():
     )
     
     selected_collection_name = DB_OPTIONS[db_choice]
+    
+    if selected_collection_name != st.session_state.selected_collection:
+        st.session_state.selected_collection = selected_collection_name
+        
+        # Clear all previous search and summary state
+        st.session_state.search_results = None
+        st.session_state.final_query = ""
+        st.session_state.original_query = ""
+        st.session_state.summary_generated = False
+        st.session_state.summary_content = None
+        st.session_state.summary_token_info = None
+        
+        st.rerun() # Rerun to apply the change and show a clean state
 
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
     selected_model = st.selectbox(

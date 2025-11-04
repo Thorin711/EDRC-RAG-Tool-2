@@ -57,36 +57,46 @@ def load_embedding_model():
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 
+# --- START: MODIFIED SECTION (EXPLICIT CACHING) ---
+# Replaced the single load_vector_store with three explicit functions
+# to prevent caching conflicts.
+
 @st.cache_resource
-def load_vector_store(_embeddings, _collection_name, _url, _api_key):
-    """Loads and caches a Qdrant vector store from the cloud.
-
-    This function initializes a Qdrant vector store by connecting to
-    an existing collection in Qdrant Cloud.
-
-    Args:
-        _embeddings (langchain_core.embeddings.Embeddings): The embedding
-            function to use with the vector store.
-        _collection_name (str): The name of the collection in Qdrant.
-        _url (str): The URL of the Qdrant Cloud instance.
-        _api_key (str): The API key for the Qdrant Cloud instance.
-
-    Returns:
-        langchain_qdrant.Qdrant: The loaded vector store instance.
-    """
-
-    # --- START: MODIFIED SECTION ---
-    # These keys must match the payload structure from your migrator script
-    # {"page_content": "...", "metadata": {...}}
-
+def load_full_store(_embeddings, _url, _api_key):
+    """Loads and caches the FULL vector store."""
     return Qdrant.from_existing_collection(
         embedding=_embeddings,
-        collection_name=_collection_name,
+        collection_name=COLLECTION_FULL,
         url=_url,
         api_key=_api_key,
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )
+
+@st.cache_resource
+def load_journal_store(_embeddings, _url, _api_key):
+    """Loads and caches the JOURNAL vector store."""
+    return Qdrant.from_existing_collection(
+        embedding=_embeddings,
+        collection_name=COLLECTION_JOURNAL,
+        url=_url,
+        api_key=_api_key,
+        content_payload_key="page_content", 
+        metadata_payload_key="metadata"
+    )
+
+@st.cache_resource
+def load_edrc_store(_embeddings, _url, _api_key):
+    """Loads and caches the EDRC vector store."""
+    return Qdrant.from_existing_collection(
+        embedding=_embeddings,
+        collection_name=COLLECTION_EDRC,
+        url=_url,
+        api_key=_api_key,
+        content_payload_key="page_content", 
+        metadata_payload_key="metadata"
+    )
+# --- END: MODIFIED SECTION ---
 
 
 @st.cache_data
@@ -280,6 +290,7 @@ def main():
     if 'summary_token_info' not in st.session_state:
         st.session_state.summary_token_info = None
         
+    # --- ADDED: Initialize selected_collection in state ---
     if 'selected_collection' not in st.session_state:
         st.session_state.selected_collection = COLLECTION_FULL # Default to the first option
 
@@ -303,14 +314,23 @@ def main():
         "EDRC Only": COLLECTION_EDRC,
     }
 
+    # --- START: MODIFIED SECTION (Stateful Radio Button) ---
+    # Find the index of the collection currently in session state
+    try:
+        current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
+    except ValueError:
+        current_collection_index = 0 # Default to first item if state is invalid
+
     db_choice = st.radio(
         "Select database to search:",
         options=DB_OPTIONS.keys(),
         horizontal=True,
+        index=current_collection_index  # Use the index from session state
     )
     
     selected_collection_name = DB_OPTIONS[db_choice]
-    
+
+    # If the user selected a new database, update the state and clear old results
     if selected_collection_name != st.session_state.selected_collection:
         st.session_state.selected_collection = selected_collection_name
         
@@ -322,7 +342,17 @@ def main():
         st.session_state.summary_content = None
         st.session_state.summary_token_info = None
         
+        # Reset the form inputs using their keys
+        st.session_state.user_query_input = "" 
+        st.session_state.k_results_input = 10
+        st.session_state.enhanced_search_toggle = True
+        st.session_state.summary_toggle = True
+        st.session_state.start_date_input = 2015
+        st.session_state.end_date_input = 2024
+        st.session_state.date_filter_toggle = False
+        
         st.rerun() # Rerun to apply the change and show a clean state
+    # --- END: MODIFIED SECTION ---
 
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
     selected_model = st.selectbox(
@@ -334,57 +364,78 @@ def main():
 
     try:
         embeddings = load_embedding_model()
-        vector_store = load_vector_store(
-            embeddings, 
-            selected_collection_name, 
-            QDRANT_URL, 
-            qdrant_api_key
-        )
+        
+        # --- START: MODIFIED SECTION (Explicit Cache Loading) ---
+        if selected_collection_name == COLLECTION_FULL:
+            vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+        elif selected_collection_name == COLLECTION_JOURNAL:
+            vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
+        else:
+            vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
+        # --- END: MODIFIED SECTION ---
         
         count_result = vector_store.client.count(
             collection_name=selected_collection_name, 
             exact=True
         )
-        st.caption(f"ℹ️ `{db_choice}` loaded with {count_result.count} documents.")
+        st.caption(f"ℹ️ `{db_choice}` (collection: `{selected_collection_name}`) loaded with {count_result.count} documents.")
         
     except Exception as e:
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
+    # --- START: MODIFIED SECTION (Added Keys to Form) ---
     with st.form("search_form"):
         user_query = st.text_input(
             "Ask a question:", 
-            placeholder="e.g., What are the effects of policy on renewable energy adoption?"
+            placeholder="e.g., What are the effects of policy on renewable energy adoption?",
+            key="user_query_input" # <-- ADDED KEY
         )
         
         col1, col2, col3 = st.columns([5, 2, 3])
         with col1:
-            k_results = st.slider("Number of results to return:", min_value=1, max_value=30, value=10)
+            k_results = st.slider(
+                "Number of results to return:", 
+                min_value=1, max_value=30, value=10, 
+                key="k_results_input" # <-- ADDED KEY
+            )
         with col2:
             use_enhanced_search = st.toggle(
                 "AI-Enhanced Search",
                 value=True,
                 help="Uses an AI model to rephrase your query.",
-                disabled=not api_key_present
+                disabled=not api_key_present,
+                key="enhanced_search_toggle" # <-- ADDED KEY
             )
         with col3:
             generate_summary = st.toggle(
                 "Generate AI Summary",
                 value=True,
                 help="Uses an AI model to summarize the search results.",
-                disabled=not api_key_present
+                disabled=not api_key_present,
+                key="summary_toggle" # <-- ADDED KEY
             )
 
         # --- Date Range Selection ---
         date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
         with date_col1:
-            start_date = st.number_input("Start Year", min_value=1900, max_value=2100, value=2015, step=1)
+            start_date = st.number_input(
+                "Start Year", min_value=1900, max_value=2100, value=2015, step=1,
+                key="start_date_input" # <-- ADDED KEY
+            )
         with date_col2:
-            end_date = st.number_input("End Year", min_value=1900, max_value=2100, value=2024, step=1)
+            end_date = st.number_input(
+                "End Year", min_value=1900, max_value=2100, value=2024, step=1,
+                key="end_date_input" # <-- ADDED KEY
+            )
         with date_col3:
-            use_date_filter = st.checkbox("Filter by year", value=False)
+            use_date_filter = st.checkbox(
+                "Filter by year", value=False, 
+                key="date_filter_toggle" # <-- ADDED KEY
+            )
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
+    # --- END: MODIFIED SECTION ---
 
     # --- Main Logic ---
     if submitted and user_query:

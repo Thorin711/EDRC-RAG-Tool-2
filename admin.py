@@ -24,16 +24,47 @@ ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
 def load_embedding_model():
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
+# --- START: MODIFIED SECTION (EXPLICIT CACHING) ---
+# Replaced the single load_vector_store with three explicit functions
+# to prevent caching conflicts.
+
 @st.cache_resource
-def load_vector_store(_embeddings, _collection_name, _url, _api_key):
+def load_full_store(_embeddings, _url, _api_key):
+    """Loads and caches the FULL vector store."""
     return Qdrant.from_existing_collection(
         embedding=_embeddings,
-        collection_name=_collection_name,
+        collection_name=COLLECTION_FULL,
         url=_url,
         api_key=_api_key,
-        content_payload_key="page_content",
+        content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )
+
+@st.cache_resource
+def load_journal_store(_embeddings, _url, _api_key):
+    """Loads and caches the JOURNAL vector store."""
+    return Qdrant.from_existing_collection(
+        embedding=_embeddings,
+        collection_name=COLLECTION_JOURNAL,
+        url=_url,
+        api_key=_api_key,
+        content_payload_key="page_content", 
+        metadata_payload_key="metadata"
+    )
+
+@st.cache_resource
+def load_edrc_store(_embeddings, _url, _api_key):
+    """Loads and caches the EDRC vector store."""
+    return Qdrant.from_existing_collection(
+        embedding=_embeddings,
+        collection_name=COLLECTION_EDRC,
+        url=_url,
+        api_key=_api_key,
+        content_payload_key="page_content", 
+        metadata_payload_key="metadata"
+    )
+# --- END: MODIFIED SECTION ---
+
 
 def admin_app():
     st.set_page_config(page_title="Admin Panel", page_icon="🔑", layout="wide")
@@ -77,12 +108,16 @@ def admin_app():
 
     try:
         embeddings = load_embedding_model()
-        vector_store = load_vector_store(
-            embeddings,
-            selected_collection_name,
-            QDRANT_URL,
-            qdrant_api_key
-        )
+        
+        # --- START: MODIFIED SECTION (Explicit Cache Loading) ---
+        if selected_collection_name == COLLECTION_FULL:
+            vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+        elif selected_collection_name == COLLECTION_JOURNAL:
+            vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
+        else:
+            vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
+        # --- END: MODIFIED SECTION ---
+            
         qdrant_client = vector_store.client
         st.info(f"Connected to collection: **{selected_collection_name}**")
     except Exception as e:
@@ -240,7 +275,6 @@ def admin_app():
                             st.error(f"An error occurred: {e}")
 
 
-        # --- DELETE TAB ---
         # --- DELETE TAB ---
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")

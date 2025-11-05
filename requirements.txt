@@ -4,3 +4,4 @@ langchain-huggingface
 openai
 tiktoken
 qdrant-client
+sentence_transformers

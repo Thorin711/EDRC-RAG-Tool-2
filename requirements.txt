@@ -1,13 +1,15 @@
 streamlit
 openai
-sentence-transformers
 tiktoken
-langchain
-langchain-huggingface
-langchain-qdrant
-langchain-community
-langchain-retrievers
-qdrant-client>=1.8.0
 beautifulsoup4
 lxml
 requests
+
+# --- Pinning all versions to a known-good set ---
+qdrant-client==1.8.0
+sentence-transformers==2.7.0
+langchain==0.1.16
+langchain-core==0.1.48
+langchain-community==0.0.34
+langchain-huggingface==0.0.3
+langchain-qdrant==0.1.1

@@ -30,7 +30,7 @@ from qdrant_client.http.models import Filter, FieldCondition, Range
 from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
-from langchain.retrievers.contextual_compression import ContextualCompressionRetrieverr
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
 from langchain_community.document_compressors.cross_encoder import CrossEncoderReranker
 
 # --- CONFIGURATION ---

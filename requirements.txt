@@ -5,6 +5,7 @@ tiktoken
 langchain
 langchain-huggingface
 langchain-qdrant
+langchain-community
 qdrant-client>=1.8.0
 beautifulsoup4
 lxml

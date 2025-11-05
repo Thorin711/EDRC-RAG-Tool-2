@@ -8,7 +8,6 @@ include:
 - On-demand downloading and caching of vector databases from a remote source.
 - A user interface to select different databases (e.g., full corpus vs. journals).
 - AI-powered query enhancement to improve search relevance.
-- **(New)** Cross-encoder reranking for improved result precision.
 - AI-powered summarization of search results with citations.
 - A clear, interactive display of search results, including document metadata
   and content snippets.
@@ -18,11 +17,6 @@ management, Hugging Face for embedding models, and OpenAI for the LLM-powered
 features.
 """
 
-# --- NEW DEPENDENCIES ---
-# You will need to install these:
-# pip install langchain-community sentence-transformers
-# ---
-
 import streamlit as st
 import os
 from langchain_qdrant import Qdrant
@@ -30,18 +24,12 @@ from qdrant_client.http.models import Filter, FieldCondition, Range
 from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
-from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
-from langchain_community.document_compressors.cross_encoder import CrossEncoderReranker
 
 # --- CONFIGURATION ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
 # --- QDRANT CONFIG ---
 QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
-
-# --- RERANKER CONFIG (NEW) ---
-RERANKER_MODEL_NAME = "BAAI/bge-reranker-large"
-RERANKER_FETCH_K = 25 # Number of docs to fetch from Qdrant for reranking
 
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
@@ -109,15 +97,6 @@ def load_edrc_store(_embeddings, _url, _api_key):
         metadata_payload_key="metadata"
     )
 # --- END: MODIFIED SECTION ---
-
-# --- NEW RERANKER CACHE ---
-@st.cache_resource
-def load_reranker():
-    """Loads and caches the CrossEncoderReranker."""
-    # The 'top_n' here is a default; we will override it dynamically
-    # based on the user's 'k_results' slider.
-    return CrossEncoderReranker(model_name=RERANKER_MODEL_NAME, top_n=10)
-# --- END NEW RERANKER CACHE ---
 
 
 @st.cache_data
@@ -329,10 +308,6 @@ def main():
         st.session_state.end_date_input = 2024
     if "date_filter_toggle" not in st.session_state:
         st.session_state.date_filter_toggle = False
-    
-    # --- ADDED RERANKER STATE ---
-    if "reranker_toggle" not in st.session_state:
-        st.session_state.reranker_toggle = True # Default to on
     # --- END: MODIFIED SECTION ---
 
     st.title("📚 Research Paper Search")
@@ -391,7 +366,6 @@ def main():
         st.session_state.start_date_input = 2015
         st.session_state.end_date_input = 2024
         st.session_state.date_filter_toggle = False
-        st.session_state.reranker_toggle = True # Reset reranker toggle
         
         st.rerun() # Rerun to apply the change and show a clean state
     # --- END: MODIFIED SECTION ---
@@ -406,7 +380,6 @@ def main():
 
     try:
         embeddings = load_embedding_model()
-        reranker = load_reranker() # <-- LOAD RERANKER
         
         # --- START: MODIFIED SECTION (Explicit Cache Loading) ---
         if selected_collection_name == COLLECTION_FULL:
@@ -427,7 +400,7 @@ def main():
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
-    # --- START: MODIFIED SECTION (Updated Form with Reranker) ---
+    # --- START: MODIFIED SECTION (Removed 'value' from Form) ---
     with st.form("search_form"):
         user_query = st.text_input(
             "Ask a question:", 
@@ -435,15 +408,13 @@ def main():
             key="user_query_input" 
         )
         
-        # --- MODIFIED COLUMNS FOR RERANKER ---
-        col1, col2, col3, col4 = st.columns([5, 2, 3, 2])
+        col1, col2, col3 = st.columns([5, 2, 3])
         with col1:
             k_results = st.slider(
                 "Number of results to return:", 
-                min_value=1, 
-                max_value=RERANKER_FETCH_K - 5, # Max results must be < fetch_k
-                key="k_results_input",
-                help=f"The final number of results to display. The app will fetch {RERANKER_FETCH_K} and rerank to find the best ones."
+                min_value=1, max_value=30, 
+                key="k_results_input"
+                # value=10, <-- REMOVED
             )
         with col2:
             use_enhanced_search = st.toggle(
@@ -451,6 +422,7 @@ def main():
                 help="Uses an AI model to rephrase your query.",
                 disabled=not api_key_present,
                 key="enhanced_search_toggle"
+                # value=True, <-- REMOVED
             )
         with col3:
             generate_summary = st.toggle(
@@ -458,13 +430,7 @@ def main():
                 help="Uses an AI model to summarize the search results.",
                 disabled=not api_key_present,
                 key="summary_toggle"
-            )
-        # --- NEW RERANKER TOGGLE ---
-        with col4:
-            use_reranker = st.toggle(
-                "Enable Reranker",
-                help="Uses a more accurate (but slower) model to rerank results.",
-                key="reranker_toggle"
+                # value=True, <-- REMOVED
             )
 
         # --- Date Range Selection ---
@@ -473,16 +439,19 @@ def main():
             start_date = st.number_input(
                 "Start Year", min_value=1900, max_value=2100, step=1,
                 key="start_date_input"
+                # value=2015, <-- REMOVED
             )
         with date_col2:
             end_date = st.number_input(
                 "End Year", min_value=1900, max_value=2100, step=1,
                 key="end_date_input"
+                # value=2024, <-- REMOVED
             )
         with date_col3:
             use_date_filter = st.checkbox(
                 "Filter by year", 
                 key="date_filter_toggle"
+                # value=False, <-- REMOVED
             )
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
@@ -514,54 +483,27 @@ def main():
                     st.session_state.final_query = user_query
         else:
             # If not using enhanced search, just run the search directly
-            # --- START: RERANKER LOGIC BLOCK 1 ---
-            spinner_msg = f"Searching and reranking `{db_choice}`..." if use_reranker else f"Searching `{db_choice}`..."
-            with st.spinner(spinner_msg):
+            with st.spinner(f"Searching `{db_choice}`..."):
                 try:
-                    # 1. Build the filter if needed
-                    filter_dict = None
+                    # Build search arguments
+                    search_kwargs = {"k": k_results}
+                    
                     if use_date_filter:
-                        filter_dict = Filter(
+                        search_kwargs["filter"] = Filter(
                             must=[
                                 FieldCondition(
+                                    # Use "metadata.year" to access the nested key
                                     key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         )
                     
-                    if use_reranker:
-                        # 2. Configure the base retriever
-                        base_retriever = vector_store.as_retriever(
-                            search_type="similarity",
-                            search_kwargs={
-                                "k": RERANKER_FETCH_K, # Fetch 25
-                                "filter": filter_dict
-                            }
-                        )
-                        
-                        # 3. Configure the reranker with the user's desired final 'k'
-                        reranker.top_n = k_results # User's slider value
-                        
-                        # 4. Create the compression retriever
-                        compression_retriever = ContextualCompressionRetriever(
-                            base_compressor=reranker,
-                            base_retriever=base_retriever
-                        )
-                        
-                        # 5. Run the search
-                        results = compression_retriever.invoke(user_query)
-                    
-                    else:
-                        # Original search logic
-                        search_kwargs = {"k": k_results, "filter": filter_dict}
-                        results = vector_store.similarity_search(user_query, **search_kwargs)
-                    
+                    results = vector_store.similarity_search(user_query, **search_kwargs)
                     st.session_state.search_results = results
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results immediately
-            # --- END: RERANKER LOGIC BLOCK 1 ---
 
     # --- Display Enhanced Query for Editing ---
     if st.session_state.final_query and not st.session_state.search_results:
@@ -572,54 +514,26 @@ def main():
 
         if run_final_search:
             query_to_use = edited_query
-            # --- START: RERANKER LOGIC BLOCK 2 ---
-            spinner_msg = f"Searching and reranking `{db_choice}`..." if use_reranker else f"Searching `{db_choice}`..."
-            with st.spinner(spinner_msg):
+            with st.spinner(f"Searching `{db_choice}` with final query..."):
                 try:
-                    # 1. Build the filter if needed
-                    filter_dict = None
+                    # Build search arguments
+                    search_kwargs = {"k": k_results}
+
                     if use_date_filter:
-                        filter_dict = Filter(
+                        search_kwargs["filter"] = Filter(
                             must=[
                                 FieldCondition(
+                                    # Use "metadata.year" to access the nested key
                                     key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         )
-                    
-                    if use_reranker:
-                        # 2. Configure the base retriever
-                        base_retriever = vector_store.as_retriever(
-                            search_type="similarity",
-                            search_kwargs={
-                                "k": RERANKER_FETCH_K, # Fetch 25
-                                "filter": filter_dict
-                            }
-                        )
-                        
-                        # 3. Configure the reranker with the user's desired final 'k'
-                        reranker.top_n = k_results # User's slider value
-                        
-                        # 4. Create the compression retriever
-                        compression_retriever = ContextualCompressionRetriever(
-                            base_compressor=reranker,
-                            base_retriever=base_retriever
-                        )
-                        
-                        # 5. Run the search
-                        results = compression_retriever.invoke(query_to_use)
-                    
-                    else:
-                        # Original search logic
-                        search_kwargs = {"k": k_results, "filter": filter_dict}
-                        results = vector_store.similarity_search(query_to_use, **search_kwargs)
 
-                    st.session_state.search_results = results
+                    st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results
-            # --- END: RERANKER LOGIC BLOCK 2 ---
 
     # --- Display Search Results ---
     if st.session_state.search_results is not None:

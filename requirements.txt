@@ -1,22 +1,14 @@
-streamlit>=1.39.0
-
-# Core LangChain ecosystem (use consistent 0.3.x versions)
-langchain>=0.3.5
-langchain-core>=0.3.5
-langchain-community>=0.3.5
-langchain-text-splitters>=0.3.0
-langchain-huggingface>=0.1.0
-langchain-qdrant>=0.1.0
-
-# Vector DB + Embeddings
+streamlit
+openai
+sentence-transformers
+tiktoken
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-huggingface
+langchain-qdrant
 qdrant-client>=1.8.0
-sentence-transformers>=3.0.0
-
-# OpenAI + Tokenization
-openai>=1.52.0
-tiktoken>=0.7.0
-
-# Utilities
-beautifulsoup4>=4.12.3
-lxml>=5.2.2
-requests>=2.32.3
+beautifulsoup4
+lxml
+requests

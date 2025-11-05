@@ -3,9 +3,6 @@ openai
 sentence-transformers
 tiktoken
 langchain
-langchain-community
-langchain-core
-langchain-text-splitters
 langchain-huggingface
 langchain-qdrant
 qdrant-client>=1.8.0

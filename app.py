@@ -519,6 +519,7 @@ def main():
                 # The app will fall through and show the review box with the original query.
                 elif not st.session_state.final_query:
                     st.session_state.final_query = user_query
+                    
         if run_final_search:
             query_to_use = edited_query
             with st.spinner(f"Searching `{db_choice}` with final query..."):
@@ -526,11 +527,19 @@ def main():
                     # Fetch EXTRA results initially to ensure we have enough after grouping
                     multiplier = 3
                     search_kwargs = {"k": k_results * multiplier}
-
+                    
                     if use_date_filter:
-                        # ... [Existing date filter logic] ...
-
-                    # 1. Initial vector search (fetching extra)
+                        search_kwargs["filter"] = Filter(
+                            must=[
+                                FieldCondition(
+                                    # Use "metadata.year" to access the nested key
+                                    key="metadata.year", 
+                                    range=Range(gte=start_date, lte=end_date)
+                                )
+                            ]
+                        )
+                    
+                    r# 1. Initial vector search (fetching extra)
                     initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                     
                     # 2. Reranking (optional)

@@ -147,6 +147,5 @@ This app is for correcting or updating metadata for documents already in the dat
 ## To Do
 
 - Improve Database metadatas
-- Fix Stability
 - Add more files
-- Double check files in EDRC only
+- Relevancy mode

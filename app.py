@@ -519,7 +519,7 @@ def main():
                 # The app will fall through and show the review box with the original query.
                 elif not st.session_state.final_query:
                     st.session_state.final_query = user_query
-        run_final_search = False 
+    run_final_search = False 
 
     # --- Display Enhanced Query for Editing ---
     if st.session_state.final_query and not st.session_state.search_results:

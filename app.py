@@ -527,59 +527,6 @@ def main():
             st.info("Review and edit the query below, then click 'Run Search'.")
             edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
             
-            # Toggle inside the form
-            use_reranker = st.toggle(
-                "Use Reranker (BGE-Large)",
-                help="Re-rank top search results using a cross-encoder model for higher precision.",
-                key="reranker_toggle"
-            )
-            
-            # Define the variable here
-            run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
-
-    # Check the variable AFTER the form block
-    if run_final_search:
-        if run_final_search:
-            query_to_use = edited_query
-            with st.spinner(f"Searching `{db_choice}` with final query..."):
-                try:
-                    # Fetch EXTRA results initially to ensure we have enough after grouping
-                    multiplier = 3
-                    search_kwargs = {"k": k_results * multiplier}
-                    
-                    if use_date_filter:
-                        search_kwargs["filter"] = Filter(
-                            must=[
-                                FieldCondition(
-                                    # Use "metadata.year" to access the nested key
-                                    key="metadata.year", 
-                                    range=Range(gte=start_date, lte=end_date)
-                                )
-                            ]
-                        )
-                    
-                    r# 1. Initial vector search (fetching extra)
-                    initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
-                    
-                    # 2. Reranking (optional)
-                    if use_reranker:
-                        with st.spinner("Re-ranking results..."):
-                            reranker_model = load_reranker_model()
-                            # Rerank ALL fetched results to find the true best chunks
-                            initial_results = rerank_results(query_to_use, initial_results, reranker_model, top_k=len(initial_results))
-
-                    # 3. Grouping (happens LAST before display to ensure best chunks lead)
-                    st.session_state.search_results = group_by_document(initial_results, top_k=k_results)
-
-                except Exception as e:
-                    st.error(f"An error occurred during the search: {e}")
-            st.rerun()
-    # --- Display Enhanced Query for Editing ---
-    if st.session_state.final_query and not st.session_state.search_results:
-        with st.form("final_search_form"):
-            st.info("Review and edit the query below, then click 'Run Search'.")
-            edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
-            
             # MOVED: Toggle is now inside the form, before the submit button
             use_reranker = st.toggle(
                 "Use Reranker (BGE-Large)",

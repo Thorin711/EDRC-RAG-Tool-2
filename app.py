@@ -148,6 +148,30 @@ def display_token_usage(token_info, model_name, title):
         st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
         st.markdown(f"- **Estimated CO2:** `{co2:.2f} g`")
 
+def group_by_document(results, top_k=10):
+    """
+    Groups document chunks by their 'source' metadata.
+    Aggregates page_content for chunks from the same document.
+    """
+    grouped = {}
+    order = [] # To maintain the original rank order of superior chunks
+
+    for doc in results:
+        # Use 'source' as the unique identifier (fallback to title if missing)
+        doc_id = doc.metadata.get('source') or doc.metadata.get('title')
+        
+        if doc_id not in grouped:
+            grouped[doc_id] = doc
+            order.append(doc_id)
+        else:
+            # Append the new chunk's content to the existing document's content
+            # You can customize the separator below
+            grouped[doc_id].page_content += "\n\n... [Next Relevant Snippet] ...\n\n" + doc.page_content
+
+    # Reconstruct the list in original order and slice to requested top_k
+    grouped_results = [grouped[doc_id] for doc_id in order]
+    return grouped_results[:top_k]
+
 def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.
 
@@ -495,30 +519,33 @@ def main():
                 # The app will fall through and show the review box with the original query.
                 elif not st.session_state.final_query:
                     st.session_state.final_query = user_query
-        else:
-            # If not using enhanced search, just run the search directly
-            with st.spinner(f"Searching `{db_choice}`..."):
+        if run_final_search:
+            query_to_use = edited_query
+            with st.spinner(f"Searching `{db_choice}` with final query..."):
                 try:
-                    # Build search arguments
-                    search_kwargs = {"k": k_results}
-                    
+                    # Fetch EXTRA results initially to ensure we have enough after grouping
+                    multiplier = 3
+                    search_kwargs = {"k": k_results * multiplier}
+
                     if use_date_filter:
-                        search_kwargs["filter"] = Filter(
-                            must=[
-                                FieldCondition(
-                                    # Use "metadata.year" to access the nested key
-                                    key="metadata.year", 
-                                    range=Range(gte=start_date, lte=end_date)
-                                )
-                            ]
-                        )
+                        # ... [Existing date filter logic] ...
+
+                    # 1. Initial vector search (fetching extra)
+                    initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                     
-                    results = vector_store.similarity_search(user_query, **search_kwargs)
-                    st.session_state.search_results = results
+                    # 2. Reranking (optional)
+                    if use_reranker:
+                        with st.spinner("Re-ranking results..."):
+                            reranker_model = load_reranker_model()
+                            # Rerank ALL fetched results to find the true best chunks
+                            initial_results = rerank_results(query_to_use, initial_results, reranker_model, top_k=len(initial_results))
+
+                    # 3. Grouping (happens LAST before display to ensure best chunks lead)
+                    st.session_state.search_results = group_by_document(initial_results, top_k=k_results)
+
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
-            st.rerun() # Rerun to display results immediately
-
+            st.rerun()
     # --- Display Enhanced Query for Editing ---
     if st.session_state.final_query and not st.session_state.search_results:
         with st.form("final_search_form"):
@@ -572,7 +599,7 @@ def main():
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results
-            
+
     # --- Display Search Results ---
     if st.session_state.search_results is not None:
         results = st.session_state.search_results

@@ -524,6 +524,14 @@ def main():
         with st.form("final_search_form"):
             st.info("Review and edit the query below, then click 'Run Search'.")
             edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
+            
+            # MOVED: Toggle is now inside the form, before the submit button
+            use_reranker = st.toggle(
+                "Use Reranker (BGE-Large)",
+                help="Re-rank top search results using a cross-encoder model for higher precision.",
+                key="reranker_toggle"
+            )
+            
             run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
 
         if run_final_search:
@@ -531,38 +539,40 @@ def main():
             with st.spinner(f"Searching `{db_choice}` with final query..."):
                 try:
                     # Build search arguments
+                    # If using reranker, we might want to fetch more initial results (e.g., 3x) 
+                    # to give the reranker more candidates, but let's stick to your current k for now 
+                    # or consider increasing it slightly if reranking is on:
+                    # initial_k = k_results * 3 if use_reranker else k_results
+                    
                     search_kwargs = {"k": k_results}
 
                     if use_date_filter:
                         search_kwargs["filter"] = Filter(
                             must=[
                                 FieldCondition(
-                                    # Use "metadata.year" to access the nested key
                                     key="metadata.year", 
                                     range=Range(gte=start_date, lte=end_date)
                                 )
                             ]
                         )
 
-                    st.session_state.search_results = vector_store.similarity_search(query_to_use, **search_kwargs)
-                    # --- Optional reranking step ---
-                    use_reranker = st.toggle(
-                        "Use Reranker (BGE-Large)",
-                        help="Re-rank top search results using a cross-encoder model for higher precision.",
-                        key="reranker_toggle"
-                    )
-
+                    # Perform initial search
+                    initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
+                    
+                    # --- Reranking step ---
                     if use_reranker:
                         with st.spinner("Re-ranking results..."):
                             reranker_model = load_reranker_model()
-                            reranked = rerank_results(query_to_use, st.session_state.search_results, reranker_model, top_k=k_results)
+                            # Pass the initial results to the reranker
+                            reranked = rerank_results(query_to_use, initial_results, reranker_model, top_k=k_results)
                             st.session_state.search_results = reranked
-                            st.success("Results re-ranked successfully.")
+                    else:
+                        st.session_state.search_results = initial_results
 
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
             st.rerun() # Rerun to display results
-
+            
     # --- Display Search Results ---
     if st.session_state.search_results is not None:
         results = st.session_state.search_results

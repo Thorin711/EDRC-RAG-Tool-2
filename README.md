@@ -6,11 +6,12 @@ This repository contains a Retrieval-Augmented Generation (RAG) tool designed to
 
 - [Project Overview](#project-overview)
 - [System Architecture](#system-architecture)
+- [Models and Data](#models-and-data)
 - [Setup and Installation](#setup-and-installation)
   - [Prerequisites](#prerequisites)
   - [Installation Steps](#installation-steps)
 - [Usage](#usage)
-  - [1. Data Processing (`pdf_to_md.py`)](#1-data-processing-pdf_to_mdpy)
+  - [1. Data Processing (`uploader.py`)](#1-data-processing-uploaderpy)
   - [2. Search and Query (`app.py`)](#2-search-and-query-apppy)
   - [3. Metadata Management (`admin.py`)](#3-metadata-management-adminpy)
 - [File Descriptions](#file-descriptions)
@@ -20,7 +21,7 @@ This repository contains a Retrieval-Augmented Generation (RAG) tool designed to
 The primary goal of this project is to provide an intelligent search interface for a corpus of research documents. Instead of simple keyword matching, it uses semantic search to find the most relevant document passages and an LLM to generate a summarized answer based on the retrieved information, complete with citations.
 
 **Key Features:**
-- **Interactive Data Pipeline:** A Streamlit app (`pdf_to_md.py`) for processing PDFs, reviewing extracted text, and uploading to a vector database.
+- **Interactive Data Pipeline:** A Streamlit app (`uploader.py`) for processing PDFs, reviewing extracted text, and uploading to a vector database.
 - **Semantic Search:** Utilizes sentence embeddings to find conceptually related text.
 - **AI-Powered Summarization:** Generates a concise, cited summary of the findings.
 - **Web-Based UI:** A user-friendly Streamlit web app (`app.py`) to ask questions and explore results.
@@ -30,7 +31,7 @@ The primary goal of this project is to provide an intelligent search interface f
 
 The system is built around three core Streamlit applications that interact with a Qdrant Cloud vector database.
 
-1.  **`pdf_to_md.py` (PDF Uploader & Processor):**
+1.  **`uploader.py` (PDF Uploader & Processor):**
     -   Users upload PDF documents through the Streamlit interface.
     -   The app calls a remote **GROBID** service to parse the PDF and extract structured XML.
     -   The XML is converted to Markdown, and metadata (title, authors, etc.) is extracted.
@@ -48,6 +49,16 @@ The system is built around three core Streamlit applications that interact with 
     -   A utility for database maintenance.
     -   Allows an administrator to search for documents by title.
     -   Retrieves all chunks associated with a title and allows for batch updates of their shared metadata (e.g., correcting a typo in the title, adding a DOI).
+
+## Models and Data
+
+### Embedding Model
+
+The system uses the `BAAI/bge-large-en-v1.5` model from Hugging Face for generating high-quality sentence embeddings. These embeddings are stored in the Qdrant vector database and are crucial for the semantic search functionality.
+
+### Data Quality Reporting
+
+User feedback and data quality reports are collected via Google Sheets to help with the ongoing curation of the dataset.
 
 ## Setup and Installation
 
@@ -77,25 +88,24 @@ The system is built around three core Streamlit applications that interact with 
     pip install -r requirements.txt
     ```
 
-4.  **Set up Streamlit secrets:**
-    -   Create a file at `.streamlit/secrets.toml` inside your project directory.
-    -   Add your API keys to this file:
-        ```toml
-        OPENAI_API_KEY="sk-..."
-        QDRANT_API_KEY="your-qdrant-api-key"
+4.  **Set Environment Variables:**
+    -   To connect to the required services, you must set the following environment variables. You can do this by exporting them in your shell or by creating a `.env` file in the project root.
+        ```bash
+        export OPENAI_API_KEY="sk-..."
+        export QDRANT_API_KEY="your-qdrant-api-key"
         ```
 
 ## Usage
 
 Each part of the system is a standalone Streamlit application.
 
-### 1. Data Processing (`pdf_to_md.py`)
+### 1. Data Processing (`uploader.py`)
 
 This app is for adding new documents to the vector database.
 
 1.  **Launch the app:**
     ```bash
-    streamlit run pdf_to_md.py
+    streamlit run uploader.py
     ```
 
 2.  **Using the App:**
@@ -139,13 +149,7 @@ This app is for correcting or updating metadata for documents already in the dat
 ## File Descriptions
 
 -   `app.py`: The main user-facing Streamlit application for search and retrieval.
--   `pdf_to_md.py`: A Streamlit app for processing PDFs and uploading them to the Qdrant vector database.
+-   `uploader.py`: A Streamlit app for processing PDFs and uploading them to the Qdrant vector database.
 -   `admin.py`: A Streamlit utility app for batch-editing document metadata in Qdrant.
 -   `requirements.txt`: A list of the Python packages required to run the project.
 -   `README.md`: This file.
-
-## To Do
-
-- Improve Database metadatas
-- Add more files
-- Relevancy mode

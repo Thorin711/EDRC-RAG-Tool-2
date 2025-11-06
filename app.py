@@ -519,7 +519,26 @@ def main():
                 # The app will fall through and show the review box with the original query.
                 elif not st.session_state.final_query:
                     st.session_state.final_query = user_query
-                    
+        run_final_search = False 
+
+    # --- Display Enhanced Query for Editing ---
+    if st.session_state.final_query and not st.session_state.search_results:
+        with st.form("final_search_form"):
+            st.info("Review and edit the query below, then click 'Run Search'.")
+            edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
+            
+            # Toggle inside the form
+            use_reranker = st.toggle(
+                "Use Reranker (BGE-Large)",
+                help="Re-rank top search results using a cross-encoder model for higher precision.",
+                key="reranker_toggle"
+            )
+            
+            # Define the variable here
+            run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
+
+    # Check the variable AFTER the form block
+    if run_final_search:
         if run_final_search:
             query_to_use = edited_query
             with st.spinner(f"Searching `{db_choice}` with final query..."):

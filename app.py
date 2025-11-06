@@ -12,6 +12,7 @@ include:
 - A clear, interactive display of search results, including document metadata
   and content snippets.
 - User reporting mechanism for data quality issues.
+- Results grouped by parent document to avoid repetitive entries.
 
 The application relies on Streamlit for the UI, LangChain for vector store
 management, Hugging Face for embedding models, and OpenAI for the LLM-powered
@@ -330,6 +331,33 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
         st.error(f"Could not generate summary due to an API error: {e}")
         return None, None
 
+def group_results(results):
+    """
+    Groups document chunks by their source document.
+    
+    This ensures that if multiple chunks from the same paper are returned,
+    they are displayed together under a single document heading, rather than
+    as separate, repetitive entries in the results list.
+    """
+    grouped = {}
+    ordered_groups = []
+    for doc in results:
+        # Use 'source' as the unique key, fallback to 'title' if missing
+        key = doc.metadata.get('source') or doc.metadata.get('title') or "unknown_doc"
+        
+        if key not in grouped:
+            # Create new group entry
+            group_data = {
+                "metadata": doc.metadata, # Use metadata from the first (highest ranked) chunk
+                "chunks": []
+            }
+            grouped[key] = group_data
+            ordered_groups.append(group_data)
+        
+        # Add chunk to existing group
+        grouped[key]["chunks"].append(doc)
+    
+    return ordered_groups
 
 def main():
     """Defines the main function to run the Streamlit application.
@@ -637,57 +665,63 @@ def main():
                     else:
                         st.warning("The AI summary could not be generated.")
 
-        st.subheader(f"Top {len(results)} Relevant Documents from {db_choice}:")
-        if not results:
+        # --- START: GROUPED RESULTS DISPLAY ---
+        # Group the raw chunk results by their parent document
+        grouped_docs = group_results(results)
+        st.subheader(f"Top {len(grouped_docs)} Documents Found (containing {len(results)} relevant snippets):")
+        
+        if not grouped_docs:
             st.info("No relevant documents found for your query.")
         else:
-            for i, doc in enumerate(results):
+            # Iterate through the grouped documents instead of raw chunks
+            for i, group in enumerate(grouped_docs):
+                meta = group['metadata']
+                chunks = group['chunks']
+                
                 with st.container(border=True):
-                    # --- Access metadata correctly ---
-                    title = doc.metadata.get('title', 'No Title Found')
-                    authors = doc.metadata.get('authors', 'No Authors Found')
-                    source_path = doc.metadata.get('source', 'Unknown Source')
+                    # --- Document-level Metadata Display ---
+                    title = meta.get('title', 'No Title Found')
+                    authors = meta.get('authors', 'No Authors Found')
+                    year = meta.get('year', 'Unknown Year')
+                    doi = meta.get('doi', '')
+                    
+                    source_path = meta.get('source', 'Unknown Source')
                     # Get the base filename and remove the .md extension.
                     base_name = source_path.split("\\")[-1]
                     source = base_name.split('.')[0]
                     if len(source) <= 4:
                         source = base_name[:-3]
-                    year = doc.metadata.get('year', 'Unknown Year')
-                    doi = doc.metadata.get('doi', '')
-                    
-                    st.markdown(f"### {i+1}. {title}")
-                    
-                    headers = [doc.metadata.get(f'Header {i}') for i in range(1, 4) if doc.metadata.get(f'Header {i}')]
-                    if headers:
-                        st.markdown(f"**Section:** {' > '.join(headers)}")
 
-                    st.markdown(f"**Authors:** {authors}")
-                    st.markdown(f"**Year:** {year}")
+                    st.markdown(f"### {i+1}. {title}")
+                    st.markdown(f"**Authors:** {authors} | **Year:** {year}")
                     
                     if doi:
                         st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
                     
-                    with st.expander("Show content snippet"):
-                        # 'doc.page_content' is correct because we set
-                        # content_payload_key="page_content"
-                        st.write(doc.page_content) 
+                    st.caption(f"Source: {source} | Found {len(chunks)} relevant snippet(s)")
 
-                    st.caption(f"Source: {source}")
-
-                    # --- NEW: Google Sheets Reporting UI ---
-                    with st.popover("🚩 Report Issue", help="Flag this chunk if it has incorrect metadata or garbled text for admin review."):
-                        with st.form(key=f"report_form_{i}"):
-                            st.write(f"Reporting: **{title[:50]}...**")
-                            reason = st.text_area("Issue Description:", placeholder="e.g., Wrong year, duplicate chunk, garbled text...")
+                    # --- Loop through all relevant chunks for this document ---
+                    for j, chunk in enumerate(chunks):
+                        # Find the most specific header for this chunk to use as a label
+                        headers = [chunk.metadata.get(f'Header {h}') for h in range(1, 4) if chunk.metadata.get(f'Header {h}')]
+                        header_label = " > ".join(headers) if headers else "Relevant Snippet"
+                        
+                        with st.expander(f"📄 Snippet {j+1}: {header_label}"):
+                            st.write(chunk.page_content)
                             
-                            if st.form_submit_button("Submit Report"):
-                                if not reason:
-                                    st.warning("Please enter a reason for the report.")
-                                else:
-                                    with st.spinner("Submitting report..."):
-                                        success = submit_report_to_sheets(doc.metadata, doc.page_content, reason)
-                                        if success:
-                                            st.success("Report submitted successfully! Thank you for helping improve the database.")
+                            # Per-chunk reporting mechanism
+                            with st.popover(f"🚩 Report Snippet {j+1}", help="Flag this specific snippet for admin review."):
+                                with st.form(key=f"report_form_{i}_{j}"):
+                                    st.write(f"Reporting snippet from: **{title[:30]}...**")
+                                    reason = st.text_area("Issue Description:", placeholder="e.g., Garbled text...", key=f"reason_{i}_{j}")
+                                    
+                                    if st.form_submit_button("Submit Report"):
+                                        if not reason:
+                                            st.warning("Please enter a reason.")
+                                        else:
+                                            with st.spinner("Submitting..."):
+                                                if submit_report_to_sheets(chunk.metadata, chunk.page_content, reason):
+                                                    st.success("Report submitted!")
 
 if __name__ == "__main__":
     main()

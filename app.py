@@ -11,8 +11,8 @@ include:
 - AI-powered summarization of search results with citations.
 - A clear, interactive display of search results, including document metadata
   and content snippets.
-- User reporting mechanism for data quality issues.
-- Results grouped by parent document to avoid repetitive entries.
+- User reporting mechanism for data quality issues (Document-level).
+- Results grouped by parent document.
 
 The application relies on Streamlit for the UI, LangChain for vector store
 management, Hugging Face for embedding models, and OpenAI for the LLM-powered
@@ -693,12 +693,29 @@ def main():
                         source = base_name[:-3]
 
                     st.markdown(f"### {i+1}. {title}")
-                    st.markdown(f"**Authors:** {authors} | **Year:** {year}")
+                    st.markdown(f"**Authors:** {authors}")
+                    st.markdown(f"**Year:** {year}")
                     
                     if doi:
                         st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
                     
                     st.caption(f"Source: {source} | Found {len(chunks)} relevant snippet(s)")
+
+                    # --- DOCUMENT LEVEL REPORTING ---
+                    with st.popover("🚩 Report Document Issue", help="Flag this entire document (e.g., wrong metadata, garbled text) for review."):
+                        with st.form(key=f"report_doc_{i}"):
+                            st.write(f"Reporting document: **{title[:40]}...**")
+                            reason = st.text_area("Issue Description:", placeholder="e.g., Wrong year, garbled text throughout...")
+                            
+                            if st.form_submit_button("Submit Report"):
+                                if not reason:
+                                    st.warning("Please enter a reason.")
+                                else:
+                                    with st.spinner("Submitting report..."):
+                                        # We use the first chunk's content as a representative sample for the report log
+                                        first_chunk_content = chunks[0].page_content if chunks else "No content available"
+                                        if submit_report_to_sheets(meta, first_chunk_content, reason):
+                                            st.success("Document reported successfully!")
 
                     # --- Loop through all relevant chunks for this document ---
                     for j, chunk in enumerate(chunks):
@@ -708,20 +725,6 @@ def main():
                         
                         with st.expander(f"📄 Snippet {j+1}: {header_label}"):
                             st.write(chunk.page_content)
-                            
-                            # Per-chunk reporting mechanism
-                            with st.popover(f"🚩 Report Snippet {j+1}", help="Flag this specific snippet for admin review."):
-                                with st.form(key=f"report_form_{i}_{j}"):
-                                    st.write(f"Reporting snippet from: **{title[:30]}...**")
-                                    reason = st.text_area("Issue Description:", placeholder="e.g., Garbled text...", key=f"reason_{i}_{j}")
-                                    
-                                    if st.form_submit_button("Submit Report"):
-                                        if not reason:
-                                            st.warning("Please enter a reason.")
-                                        else:
-                                            with st.spinner("Submitting..."):
-                                                if submit_report_to_sheets(chunk.metadata, chunk.page_content, reason):
-                                                    st.success("Report submitted!")
 
 if __name__ == "__main__":
     main()

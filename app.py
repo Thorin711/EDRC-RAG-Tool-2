@@ -29,7 +29,6 @@ import openai
 import tiktoken
 from sentence_transformers import CrossEncoder
 
-# --- NEW IMPORTS FOR REPORTING ---
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -44,21 +43,14 @@ def rerank_results(query, docs, reranker_model, top_k=10):
     reranked_docs = [doc for doc, _ in reranked[:top_k]]
     return reranked_docs
 
-# --- CONFIGURATION ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-
-# --- QDRANT CONFIG ---
 QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
 
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
 COLLECTION_EDRC = "edrc_papers"
-
-# --- GOOGLE SHEETS CONFIG ---
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 REPORT_SHEET_NAME = "RAG Data Reports" 
-
-# Pricing per million tokens (Input, Output)
 MODEL_COSTS = {
     "gpt-5-nano": {"input": 0.05, "output": 0.40},
     "gpt-5-mini": {"input": 0.25, "output": 2.00},
@@ -78,11 +70,6 @@ def load_embedding_model():
         langchain_huggingface.HuggingFaceEmbeddings: The loaded embedding model.
     """
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-
-# --- START: MODIFIED SECTION (EXPLICIT CACHING) ---
-# Replaced the single load_vector_store with three explicit functions
-# to prevent caching conflicts.
 
 @st.cache_resource
 def load_full_store(_embeddings, _url, _api_key):
@@ -119,8 +106,6 @@ def load_edrc_store(_embeddings, _url, _api_key):
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )
-# --- END: MODIFIED SECTION ---
-
 
 @st.cache_data
 def count_tokens(text: str, model: str = "gpt-5-nano") -> int:
@@ -369,7 +354,6 @@ def main():
     """
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
 
-    # --- START: MODIFIED SECTION (State Initialization) ---
     if 'final_query' not in st.session_state:
         st.session_state.final_query = ""
     if 'search_results' not in st.session_state:
@@ -400,7 +384,6 @@ def main():
         st.session_state.end_date_input = 2024
     if "date_filter_toggle" not in st.session_state:
         st.session_state.date_filter_toggle = False
-    # --- END: MODIFIED SECTION ---
 
     st.title("📚 Research Paper Search")
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
@@ -422,8 +405,6 @@ def main():
         "EDRC Only": COLLECTION_EDRC,
     }
 
-    # --- START: MODIFIED SECTION (Stateful Radio Button) ---
-    # Find the index of the collection currently in session state
     try:
         current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
     except ValueError:
@@ -459,8 +440,7 @@ def main():
         st.session_state.end_date_input = 2024
         st.session_state.date_filter_toggle = False
         
-        st.rerun() # Rerun to apply the change and show a clean state
-    # --- END: MODIFIED SECTION ---
+        st.rerun()
 
     available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
     selected_model = st.selectbox(
@@ -473,14 +453,12 @@ def main():
     try:
         embeddings = load_embedding_model()
         
-        # --- START: MODIFIED SECTION (Explicit Cache Loading) ---
         if selected_collection_name == COLLECTION_FULL:
             vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
         elif selected_collection_name == COLLECTION_JOURNAL:
             vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
         else:
             vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
-        # --- END: MODIFIED SECTION ---
         
         count_result = vector_store.client.count(
             collection_name=selected_collection_name, 
@@ -492,7 +470,6 @@ def main():
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
-    # --- START: MODIFIED SECTION (Removed 'value' from Form) ---
     with st.form("search_form"):
         user_query = st.text_input(
             "Ask a question:", 
@@ -541,12 +518,8 @@ def main():
             )
 
         submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
-    # --- END: MODIFIED SECTION ---
 
-
-    # --- Main Logic ---
     if submitted and user_query:
-        # Clear previous results and reset state on new submission
         st.session_state.search_results = None
         st.session_state.final_query = ""
         st.session_state.original_query = user_query
@@ -602,7 +575,6 @@ def main():
                     # Perform initial search
                     initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                     
-                    # --- Reranking step ---
                     if use_reranker:
                         with st.spinner("Re-ranking results..."):
                             reranker_model = load_reranker_model()
@@ -613,14 +585,11 @@ def main():
 
                 except Exception as e:
                     st.error(f"An error occurred during the search: {e}")
-            st.rerun() # Rerun to display results
+            st.rerun()
 
-    # --- Display Search Results ---
     if st.session_state.search_results is not None:
         results = st.session_state.search_results
 
-        # --- AI Summary Section ---
-        # Display summary if it has already been generated
         if st.session_state.summary_generated:
             with st.expander("✨ **AI-Generated Summary**", expanded=True):
                 st.markdown(st.session_state.summary_content)
@@ -665,8 +634,6 @@ def main():
                     else:
                         st.warning("The AI summary could not be generated.")
 
-        # --- START: GROUPED RESULTS DISPLAY ---
-        # Group the raw chunk results by their parent document
         grouped_docs = group_results(results)
         st.subheader(f"Top {len(grouped_docs)} Documents Found (containing {len(results)} relevant snippets):")
         
@@ -679,7 +646,6 @@ def main():
                 chunks = group['chunks']
                 
                 with st.container(border=True):
-                    # --- Document-level Metadata Display ---
                     title = meta.get('title', 'No Title Found')
                     authors = meta.get('authors', 'No Authors Found')
                     year = meta.get('year', 'Unknown Year')
@@ -701,7 +667,6 @@ def main():
                     
                     st.caption(f"Source: {source} | Found {len(chunks)} relevant snippet(s)")
 
-                    # --- DOCUMENT LEVEL REPORTING ---
                     with st.popover("🚩 Report Document Issue", help="Flag this entire document (e.g., wrong metadata, garbled text) for review."):
                         with st.form(key=f"report_doc_{i}"):
                             st.write(f"Reporting document: **{title[:40]}...**")
@@ -717,9 +682,7 @@ def main():
                                         if submit_report_to_sheets(meta, first_chunk_content, reason):
                                             st.success("Document reported successfully!")
 
-                    # --- Loop through all relevant chunks for this document ---
                     for j, chunk in enumerate(chunks):
-                        # Find the most specific header for this chunk to use as a label
                         headers = [chunk.metadata.get(f'Header {h}') for h in range(1, 4) if chunk.metadata.get(f'Header {h}')]
                         header_label = " > ".join(headers) if headers else "Relevant Snippet"
                         

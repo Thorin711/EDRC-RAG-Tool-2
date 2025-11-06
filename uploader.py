@@ -19,7 +19,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import Qdrant
 import qdrant_client
 
-# --- CONFIGURATION ---
 GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 REQUEST_TIMEOUT = 180
 MAX_RETRIES = 2
@@ -245,7 +244,6 @@ def main():
         st.error(f"Failed to load embedding model: {e}")
         st.stop()
 
-    # --- MODIFIED: Changed from st.radio to st.multiselect ---
     st.subheader("Target Vector Collection(s)")
     selected_db_keys = st.multiselect(
         "Select one or more Qdrant collections to upload this document to:",
@@ -260,7 +258,6 @@ def main():
         st.warning("Please select at least one target collection to enable upload.")
         
     st.markdown("---")
-    # --- END OF MODIFICATION ---
 
 
     uploaded_files = st.file_uploader(
@@ -331,10 +328,8 @@ def main():
                 key=f"body_{unique_key}"
             )
 
-        # --- 3. Actions Section (Moved out of columns) ---
         st.subheader("3. Finalize & Upload")
         
-        # --- Assemble Final Content (for upload button) ---
         safe_title = edited_title.replace('"', '\\"')
         safe_doi = edited_doi.replace('"', '\\"')
         safe_year = edited_year.replace('"', '\\"')
@@ -349,20 +344,15 @@ def main():
         
         final_markdown_for_download = final_yaml_str + edited_body
         
-        # --- Download Button REMOVED ---
-
-        # --- MODIFIED: UPLOAD BUTTON (Full Width) ---
         if st.button(
             "Confirm & Upload to Vector DB", 
             type="primary", 
             key=f"upload_{unique_key}",
             use_container_width=True
         ):
-            # --- MODIFIED: Check if any collections are selected ---
             if not selected_collection_names:
                 st.error("Please select at least one target collection above.")
             else:
-                # --- MODIFIED: This fixes the NameError ---
                 spinner_text = f"Uploading `{edited_title}` to {len(selected_collection_names)} collection(s)..."
                 
                 with st.spinner(spinner_text):
@@ -388,12 +378,8 @@ def main():
                             st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
                             pass
 
-                        # 2. Chunk the document (Done ONCE)
-                        # The chunker will use headers but the YAML will be in the first chunk.
-                        # This is fine as the metadata is applied to all chunks anyway.
                         chunks = chunk_document(final_markdown_for_download, doc_metadata)
                         
-                        # --- MODIFIED: Loop and upload to EACH selected collection ---
                         st.write(f"Document chunked. Starting uploads...")
                         
                         for collection_name in selected_collection_names:
@@ -403,7 +389,7 @@ def main():
                                 embedding_model=embeddings,
                                 url=QDRANT_URL,
                                 api_key=qdrant_api_key,
-                                collection_name=collection_name  # <-- Use the loop variable
+                                collection_name=collection_name
                             )
                         
                         st.success(f"Successfully uploaded document to all {len(selected_collection_names)} selected collections! 🎉")
@@ -411,7 +397,6 @@ def main():
                     except Exception as e:
                         st.error(f"An error occurred during upload: {e}")
                         st.exception(e)
-        # --- END OF MODIFICATION ---
 
         st.markdown("---")
 

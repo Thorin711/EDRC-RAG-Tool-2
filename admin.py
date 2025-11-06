@@ -10,7 +10,6 @@ from qdrant_client.http.models import (
 from langchain_qdrant import Qdrant
 from langchain_huggingface import HuggingFaceEmbeddings
 
-# --- CONFIGURATION ---
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io"
 COLLECTION_FULL = "full_papers"
@@ -19,14 +18,9 @@ COLLECTION_EDRC = "edrc_papers"
 
 ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
 
-# --- CACHING ---
 @st.cache_resource
 def load_embedding_model():
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-# --- START: MODIFIED SECTION (EXPLICIT CACHING) ---
-# Replaced the single load_vector_store with three explicit functions
-# to prevent caching conflicts.
 
 @st.cache_resource
 def load_full_store(_embeddings, _url, _api_key):
@@ -63,8 +57,6 @@ def load_edrc_store(_embeddings, _url, _api_key):
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )
-# --- END: MODIFIED SECTION ---
-
 
 def admin_app():
     st.set_page_config(page_title="Admin Panel", page_icon="🔑", layout="wide")
@@ -109,14 +101,12 @@ def admin_app():
     try:
         embeddings = load_embedding_model()
         
-        # --- START: MODIFIED SECTION (Explicit Cache Loading) ---
         if selected_collection_name == COLLECTION_FULL:
             vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
         elif selected_collection_name == COLLECTION_JOURNAL:
             vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
         else:
             vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
-        # --- END: MODIFIED SECTION ---
             
         qdrant_client = vector_store.client
         st.info(f"Connected to collection: **{selected_collection_name}**")
@@ -162,7 +152,6 @@ def admin_app():
         else:
             st.warning("Please enter a search query.")
 
-    # --- Section 3: Edit or Delete (NEW TABS) ---
     if st.session_state.selected_points:
         selected_points = st.session_state.selected_points
         point_ids_to_update = [point.id for point in selected_points]
@@ -183,7 +172,6 @@ def admin_app():
         
         edit_tab, delete_tab = st.tabs(["Edit Metadata", "⛔ Delete Document"])
 
-        # --- EDIT TAB ---
         with edit_tab:
             st.subheader("Update Metadata Fields")
             st.write("Changes here will apply to **all** selected chunks.")
@@ -194,9 +182,8 @@ def admin_app():
                 new_year = st.number_input("Year", min_value=0, max_value=2100, step=1, value=current_meta.get('year', 2024))
                 new_doi = st.text_input("DOI", value=current_meta.get('doi', ''))
                 
-                st.markdown("---") # Visual separator
+                st.markdown("---")
                 
-                # +++ ADD THIS CHECKBOX +++
                 apply_all_edit = st.checkbox(
                     "Apply these metadata changes to ALL collections (full_papers, journal_papers, edrc_papers)",
                     value=False,
@@ -228,25 +215,22 @@ def admin_app():
                         try:
                             total_chunks_updated = 0
                             
-                            # +++ LOOP THROUGH EACH COLLECTION +++
                             for collection_name in collections_to_update:
-                                # Find the points in *this specific collection* by the *original* title
                                 title_filter = Filter(
                                     must=[
                                         FieldCondition(
                                             key="metadata.title",
-                                            match=MatchText(text=current_title) # Use original title to find
+                                            match=MatchText(text=current_title)
                                         )
                                     ]
                                 )
                                 points_to_update, _ = qdrant_client.scroll(
                                     collection_name=collection_name,
                                     scroll_filter=title_filter,
-                                    limit=500, # Set a reasonable limit
-                                    with_payload=False # Don't need payload, just IDs
+                                    limit=500,
+                                    with_payload=False
                                 )
                                 
-                                # Get the IDs to update
                                 point_ids = [point.id for point in points_to_update]
                                 
                                 if not point_ids:
@@ -275,7 +259,6 @@ def admin_app():
                             st.error(f"An error occurred: {e}")
 
 
-        # --- DELETE TAB ---
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")
             st.warning(f"**WARNING:** You are about to permanently delete document chunks associated with this title. This action **cannot** be undone.")
@@ -289,9 +272,8 @@ def admin_app():
                     placeholder="Type title to confirm..."
                 )
                 
-                st.markdown("---") # Visual separator
+                st.markdown("---")
                 
-                # +++ ADD THIS CHECKBOX +++
                 apply_all_delete = st.checkbox(
                     "Permanently delete from ALL collections (full_papers, journal_papers, edrc_papers)",
                     value=False,

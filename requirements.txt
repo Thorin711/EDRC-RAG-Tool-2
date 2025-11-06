@@ -1,6 +1,7 @@
 streamlit
 langchain-qdrant
 langchain-huggingface
+langchain-community
 openai
 tiktoken
 qdrant-client

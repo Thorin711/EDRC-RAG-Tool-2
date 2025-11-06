@@ -13,3 +13,5 @@ qdrant-client>=1.8.0
 beautifulsoup4
 lxml
 requests
+gspread
+oauth2client

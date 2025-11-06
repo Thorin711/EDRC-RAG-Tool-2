@@ -3,6 +3,13 @@ langchain-qdrant
 langchain-huggingface
 langchain-community
 openai
-tiktoken
-qdrant-client
 sentence-transformers
+tiktoken
+langchain-core
+langchain-text-splitters
+langchain-huggingface
+langchain-qdrant
+qdrant-client>=1.8.0
+beautifulsoup4
+lxml
+requests

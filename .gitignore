@@ -27,3 +27,4 @@ vector_db_journals/
 .streamlit/
 gemini.md
 create_index.py
+app_test.py

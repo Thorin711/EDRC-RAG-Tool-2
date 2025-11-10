@@ -13,6 +13,7 @@ include:
   and content snippets.
 - User reporting mechanism for data quality issues (Document-level).
 - Results grouped by parent document.
+- An "Author Explorer" tab to find top authors by subject.
 
 The application relies on Streamlit for the UI, LangChain for vector store
 management, Hugging Face for embedding models, and OpenAI for the LLM-powered
@@ -28,6 +29,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
 from sentence_transformers import CrossEncoder
+import collections  # Added for counting authors
+import pandas as pd  # Added for displaying author results
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -404,54 +407,22 @@ def main():
         "Journal Articles Only": COLLECTION_JOURNAL,
         "EDRC Only": COLLECTION_EDRC,
     }
-
-    try:
-        current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
-    except ValueError:
-        current_collection_index = 0 # Default to first item if state is invalid
-
-    db_choice = st.radio(
-        "Select database to search:",
-        options=DB_OPTIONS.keys(),
-        horizontal=True,
-        index=current_collection_index  # Use the index from session state
-    )
     
-    selected_collection_name = DB_OPTIONS[db_choice]
-
-    # If the user selected a new database, update the state and clear old results
-    if selected_collection_name != st.session_state.selected_collection:
-        st.session_state.selected_collection = selected_collection_name
-        
-        # Clear all previous search and summary state
-        st.session_state.search_results = None
-        st.session_state.final_query = ""
-        st.session_state.original_query = ""
-        st.session_state.summary_generated = False
-        st.session_state.summary_content = None
-        st.session_state.summary_token_info = None
-        
-        # Reset the form inputs using their keys
-        st.session_state.user_query_input = "" 
-        st.session_state.k_results_input = 10
-        st.session_state.enhanced_search_toggle = True
-        st.session_state.summary_toggle = True
-        st.session_state.start_date_input = 2015
-        st.session_state.end_date_input = 2024
-        st.session_state.date_filter_toggle = False
-        
-        st.rerun()
-
-    available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
-    selected_model = st.selectbox(
-        "Select AI Model for Summary:",
-        options=available_models,
-        index=0,
-        help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
-    )
-
+    # --- Load Models and Vector Store (needed for both tabs) ---
     try:
         embeddings = load_embedding_model()
+        
+        # We still need to load the *selected* store for the main search tab
+        # The author tab will load the full store independently if needed
+        
+        try:
+            current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
+        except ValueError:
+            current_collection_index = 0 # Default to first item if state is invalid
+
+        # Store the db_choice label for use in the main tab caption
+        db_choice_label = list(DB_OPTIONS.keys())[current_collection_index]
+        selected_collection_name = st.session_state.selected_collection
         
         if selected_collection_name == COLLECTION_FULL:
             vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
@@ -460,234 +431,350 @@ def main():
         else:
             vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
         
-        count_result = vector_store.client.count(
-            collection_name=selected_collection_name, 
-            exact=True
-        )
-        st.caption(f"ℹ️ `{db_choice}` (collection: `{selected_collection_name}`) loaded with {count_result.count} documents.")
-        
     except Exception as e:
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
-    with st.form("search_form"):
-        user_query = st.text_input(
-            "Ask a question:", 
-            placeholder="e.g., What are the effects of policy on renewable energy adoption?",
-            key="user_query_input" 
+    # --- Create Tabs ---
+    tab1, tab2 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer"])
+
+    with tab1:
+        # --- Database Selection ---
+        db_choice = st.radio(
+            "Select database to search:",
+            options=DB_OPTIONS.keys(),
+            horizontal=True,
+            index=current_collection_index,  # Use the index from session state
+            key="db_selection_radio"
         )
         
-        col1, col2, col3 = st.columns([5, 2, 3])
-        with col1:
-            k_results = st.slider(
-                "Number of results to return:", 
-                min_value=1, max_value=30, 
-                key="k_results_input"
-            )
-        with col2:
-            use_enhanced_search = st.toggle(
-                "AI-Enhanced Search",
-                help="Uses an AI model to rephrase your query.",
-                disabled=not api_key_present,
-                key="enhanced_search_toggle"
-            )
-        with col3:
-            generate_summary = st.toggle(
-                "Generate AI Summary",
-                help="Uses an AI model to summarize the search results.",
-                disabled=not api_key_present,
-                key="summary_toggle"
-            )
+        selected_collection_name_from_radio = DB_OPTIONS[db_choice]
 
-        # --- Date Range Selection ---
-        date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
-        with date_col1:
-            start_date = st.number_input(
-                "Start Year", min_value=1900, max_value=2100, step=1,
-                key="start_date_input"
-            )
-        with date_col2:
-            end_date = st.number_input(
-                "End Year", min_value=1900, max_value=2100, step=1,
-                key="end_date_input"
-            )
-        with date_col3:
-            use_date_filter = st.checkbox(
-                "Filter by year", 
-                key="date_filter_toggle"
-            )
-
-        submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
-
-    if submitted and user_query:
-        st.session_state.search_results = None
-        st.session_state.final_query = ""
-        st.session_state.original_query = user_query
-        st.session_state.summary_generated = False
-        st.session_state.summary_content = None
-        st.session_state.summary_token_info = None
-
-        if use_enhanced_search and api_key_present:
-            with st.spinner("Improving query..."):
-
-                openai.api_key = st.secrets["OPENAI_API_KEY"]
-                improved_query, token_info = improve_query_with_llm(user_query)
-
-                if token_info:
-                    display_token_usage(token_info, "gpt-4o-mini", "Query Enhancement")
-                    st.session_state.final_query = improved_query if improved_query else user_query
-                # If token_info is None, an API error occurred and a warning was already shown.
-                # The app will fall through and show the review box with the original query.
-                elif not st.session_state.final_query:
-                    st.session_state.final_query = user_query
-    run_final_search = False 
-
-    # --- Display Enhanced Query for Editing ---
-    if st.session_state.final_query and not st.session_state.search_results:
-        with st.form("final_search_form"):
-            st.info("Review and edit the query below, then click 'Run Search'.")
-            edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
+        # If the user selected a new database, update the state and clear old results
+        if selected_collection_name_from_radio != st.session_state.selected_collection:
+            st.session_state.selected_collection = selected_collection_name_from_radio
             
-            use_reranker = st.toggle(
-                "Use Reranker (BGE-Large)",
-                help="Re-rank top search results using a cross-encoder model for higher precision.",
-                key="reranker_toggle"
-            )
+            # Clear all previous search and summary state
+            st.session_state.search_results = None
+            st.session_state.final_query = ""
+            st.session_state.original_query = ""
+            st.session_state.summary_generated = False
+            st.session_state.summary_content = None
+            st.session_state.summary_token_info = None
             
-            run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
-
-        if run_final_search:
-            query_to_use = edited_query
-            with st.spinner(f"Searching `{db_choice}` with final query..."):
-                try:
-                    search_kwargs = {"k": k_results}
-
-                    if use_date_filter:
-                        search_kwargs["filter"] = Filter(
-                            must=[
-                                FieldCondition(
-                                    key="metadata.year", 
-                                    range=Range(gte=start_date, lte=end_date)
-                                )
-                            ]
-                        )
-
-                    # Perform initial search
-                    initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
-                    
-                    if use_reranker:
-                        with st.spinner("Re-ranking results..."):
-                            reranker_model = load_reranker_model()
-                            reranked = rerank_results(query_to_use, initial_results, reranker_model, top_k=k_results)
-                            st.session_state.search_results = reranked
-                    else:
-                        st.session_state.search_results = initial_results
-
-                except Exception as e:
-                    st.error(f"An error occurred during the search: {e}")
+            # Reset the form inputs using their keys
+            st.session_state.user_query_input = "" 
+            st.session_state.k_results_input = 10
+            st.session_state.enhanced_search_toggle = True
+            st.session_state.summary_toggle = True
+            st.session_state.start_date_input = 2015
+            st.session_state.end_date_input = 2024
+            st.session_state.date_filter_toggle = False
+            
             st.rerun()
 
-    if st.session_state.search_results is not None:
-        results = st.session_state.search_results
+        available_models = ["gpt-5-nano", "gpt-4o-mini", "gpt-5-mini"]
+        selected_model = st.selectbox(
+            "Select AI Model for Summary:",
+            options=available_models,
+            index=0,
+            help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
+        )
 
-        if st.session_state.summary_generated:
-            with st.expander("✨ **AI-Generated Summary**", expanded=True):
-                st.markdown(st.session_state.summary_content)
-            display_token_usage(st.session_state.summary_token_info, selected_model, "AI Summary")
-
-        # Show confirmation form if summary is requested but not yet generated
-        elif generate_summary and results and api_key_present:
-            with st.form("summary_confirmation_form"):
-                st.subheader("Generate AI Summary")
-                st.info("A summary will be generated based on the search results. Review the estimated cost below.")
-
-                context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(st.session_state.search_results)])
-                est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
-                dynamic_max_tokens = est_input_tokens + 1000
-
-                # Estimate cost
-                model_pricing = MODEL_COSTS.get(selected_model, {"input": 0, "output": 0})
-                input_cost = (est_input_tokens * model_pricing.get("input", 0)) / 1_000_000
-                # Use dynamic_max_tokens for output cost estimation
-                output_cost = (dynamic_max_tokens * model_pricing.get("output", 0)) / 1_000_000
-                estimated_cost = input_cost + output_cost
-                est_co2 = dynamic_max_tokens * 0.159/50 # CO2 in g per token x tokens
-
-
-                st.markdown(f"- **Estimated Input Tokens:** `{est_input_tokens}`")
-                st.markdown(f"- **Max Output Tokens:** `{dynamic_max_tokens}`")
-                st.markdown(f"- **Estimated Maximum Cost:** `${estimated_cost:.4f}`")
-                st.markdown(f"- **Estimated Maximum CO2:** `{est_co2:.2f}` g")
-
-                proceed_with_summary = st.form_submit_button("Generate Summary", type="primary")
-
-            if proceed_with_summary:
-                with st.spinner("Thinking..."):
-                    openai.api_key = st.secrets["OPENAI_API_KEY"]
-                    summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
-
-                    if summary and token_info:
-                        st.session_state.summary_content = summary
-                        st.session_state.summary_token_info = token_info
-                        st.session_state.summary_generated = True
-                        st.rerun()
-                    else:
-                        st.warning("The AI summary could not be generated.")
-
-        grouped_docs = group_results(results)
-        st.subheader(f"Top {len(grouped_docs)} Documents Found (containing {len(results)} relevant snippets):")
+        try:
+            count_result = vector_store.client.count(
+                collection_name=st.session_state.selected_collection, 
+                exact=True
+            )
+            st.caption(f"ℹ️ `{db_choice_label}` (collection: `{st.session_state.selected_collection}`) loaded with {count_result.count} documents.")
         
-        if not grouped_docs:
-            st.info("No relevant documents found for your query.")
-        else:
-            # Iterate through the grouped documents instead of raw chunks
-            for i, group in enumerate(grouped_docs):
-                meta = group['metadata']
-                chunks = group['chunks']
+        except Exception as e:
+            st.error(f"An error occurred while counting documents: {e}")
+            st.stop()
+
+        with st.form("search_form"):
+            user_query = st.text_input(
+                "Ask a question:", 
+                placeholder="e.g., What are the effects of policy on renewable energy adoption?",
+                key="user_query_input" 
+            )
+            
+            col1, col2, col3 = st.columns([5, 2, 3])
+            with col1:
+                k_results = st.slider(
+                    "Number of results to return:", 
+                    min_value=1, max_value=30, 
+                    key="k_results_input"
+                )
+            with col2:
+                use_enhanced_search = st.toggle(
+                    "AI-Enhanced Search",
+                    help="Uses an AI model to rephrase your query.",
+                    disabled=not api_key_present,
+                    key="enhanced_search_toggle"
+                )
+            with col3:
+                generate_summary = st.toggle(
+                    "Generate AI Summary",
+                    help="Uses an AI model to summarize the search results.",
+                    disabled=not api_key_present,
+                    key="summary_toggle"
+                )
+
+            # --- Date Range Selection ---
+            date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
+            with date_col1:
+                start_date = st.number_input(
+                    "Start Year", min_value=1900, max_value=2100, step=1,
+                    key="start_date_input"
+                )
+            with date_col2:
+                end_date = st.number_input(
+                    "End Year", min_value=1900, max_value=2100, step=1,
+                    key="end_date_input"
+                )
+            with date_col3:
+                use_date_filter = st.checkbox(
+                    "Filter by year", 
+                    key="date_filter_toggle"
+                )
+
+            submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
+
+        if submitted and user_query:
+            st.session_state.search_results = None
+            st.session_state.final_query = ""
+            st.session_state.original_query = user_query
+            st.session_state.summary_generated = False
+            st.session_state.summary_content = None
+            st.session_state.summary_token_info = None
+
+            if use_enhanced_search and api_key_present:
+                with st.spinner("Improving query..."):
+
+                    openai.api_key = st.secrets["OPENAI_API_KEY"]
+                    improved_query, token_info = improve_query_with_llm(user_query)
+
+                    if token_info:
+                        display_token_usage(token_info, "gpt-4o-mini", "Query Enhancement")
+                        st.session_state.final_query = improved_query if improved_query else user_query
+                    # If token_info is None, an API error occurred and a warning was already shown.
+                    # The app will fall through and show the review box with the original query.
+                    elif not st.session_state.final_query:
+                        st.session_state.final_query = user_query
+        run_final_search = False 
+
+        # --- Display Enhanced Query for Editing ---
+        if st.session_state.final_query and not st.session_state.search_results:
+            with st.form("final_search_form"):
+                st.info("Review and edit the query below, then click 'Run Search'.")
+                edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
                 
-                with st.container(border=True):
-                    title = meta.get('title', 'No Title Found')
-                    authors = meta.get('authors', 'No Authors Found')
-                    year = meta.get('year', 'Unknown Year')
-                    doi = meta.get('doi', '')
-                    
-                    source_path = meta.get('source', 'Unknown Source')
-                    # Get the base filename and remove the .md extension.
-                    base_name = source_path.split("\\")[-1]
-                    source = base_name.split('.')[0]
-                    if len(source) <= 4:
-                        source = base_name[:-3]
+                use_reranker = st.toggle(
+                    "Use Reranker (BGE-Large)",
+                    help="Re-rank top search results using a cross-encoder model for higher precision.",
+                    key="reranker_toggle"
+                )
+                
+                run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
 
-                    st.markdown(f"### {i+1}. {title}")
-                    st.markdown(f"**Authors:** {authors}")
-                    st.markdown(f"**Year:** {year}")
-                    
-                    if doi:
-                        st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
-                    
-                    st.caption(f"Source: {source} | Found {len(chunks)} relevant snippet(s)")
+            if run_final_search:
+                query_to_use = edited_query
+                with st.spinner(f"Searching `{db_choice_label}` with final query..."):
+                    try:
+                        search_kwargs = {"k": k_results}
 
-                    with st.popover("🚩 Report Document Issue", help="Flag this entire document (e.g., wrong metadata, garbled text) for review."):
-                        with st.form(key=f"report_doc_{i}"):
-                            st.write(f"Reporting document: **{title[:40]}...**")
-                            reason = st.text_area("Issue Description:", placeholder="e.g., Wrong year, garbled text throughout...")
-                            
-                            if st.form_submit_button("Submit Report"):
-                                if not reason:
-                                    st.warning("Please enter a reason.")
-                                else:
-                                    with st.spinner("Submitting report..."):
-                                        # We use the first chunk's content as a representative sample for the report log
-                                        first_chunk_content = chunks[0].page_content if chunks else "No content available"
-                                        if submit_report_to_sheets(meta, first_chunk_content, reason):
-                                            st.success("Document reported successfully!")
+                        if use_date_filter:
+                            search_kwargs["filter"] = Filter(
+                                must=[
+                                    FieldCondition(
+                                        key="metadata.year", 
+                                        range=Range(gte=start_date, lte=end_date)
+                                    )
+                                ]
+                            )
 
-                    for j, chunk in enumerate(chunks):
-                        headers = [chunk.metadata.get(f'Header {h}') for h in range(1, 4) if chunk.metadata.get(f'Header {h}')]
-                        header_label = " > ".join(headers) if headers else "Relevant Snippet"
+                        # Perform initial search
+                        initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
                         
-                        with st.expander(f"📄 Snippet {j+1}: {header_label}"):
-                            st.write(chunk.page_content)
+                        if use_reranker:
+                            with st.spinner("Re-ranking results..."):
+                                reranker_model = load_reranker_model()
+                                reranked = rerank_results(query_to_use, initial_results, reranker_model, top_k=k_results)
+                                st.session_state.search_results = reranked
+                        else:
+                            st.session_state.search_results = initial_results
+
+                    except Exception as e:
+                        st.error(f"An error occurred during the search: {e}")
+                st.rerun()
+
+        if st.session_state.search_results is not None:
+            results = st.session_state.search_results
+
+            if st.session_state.summary_generated:
+                with st.expander("✨ **AI-Generated Summary**", expanded=True):
+                    st.markdown(st.session_state.summary_content)
+                display_token_usage(st.session_state.summary_token_info, selected_model, "AI Summary")
+
+            # Show confirmation form if summary is requested but not yet generated
+            elif generate_summary and results and api_key_present:
+                with st.form("summary_confirmation_form"):
+                    st.subheader("Generate AI Summary")
+                    st.info("A summary will be generated based on the search results. Review the estimated cost below.")
+
+                    context_text = "\n\n".join([f"--- Source [{i+1}] ---\nTitle: {doc.metadata.get('title', 'No Title Found')}\nSnippet: {doc.page_content}\n---" for i, doc in enumerate(st.session_state.search_results)])
+                    est_input_tokens = count_tokens(st.session_state.original_query + context_text, model=selected_model)
+                    dynamic_max_tokens = est_input_tokens + 1000
+
+                    # Estimate cost
+                    model_pricing = MODEL_COSTS.get(selected_model, {"input": 0, "output": 0})
+                    input_cost = (est_input_tokens * model_pricing.get("input", 0)) / 1_000_000
+                    # Use dynamic_max_tokens for output cost estimation
+                    output_cost = (dynamic_max_tokens * model_pricing.get("output", 0)) / 1_000_000
+                    estimated_cost = input_cost + output_cost
+                    est_co2 = dynamic_max_tokens * 0.159/50 # CO2 in g per token x tokens
+
+
+                    st.markdown(f"- **Estimated Input Tokens:** `{est_input_tokens}`")
+                    st.markdown(f"- **Max Output Tokens:** `{dynamic_max_tokens}`")
+                    st.markdown(f"- **Estimated Maximum Cost:** `${estimated_cost:.4f}`")
+                    st.markdown(f"- **Estimated Maximum CO2:** `{est_co2:.2f}` g")
+
+                    proceed_with_summary = st.form_submit_button("Generate Summary", type="primary")
+
+                if proceed_with_summary:
+                    with st.spinner("Thinking..."):
+                        openai.api_key = st.secrets["OPENAI_API_KEY"]
+                        summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
+
+                        if summary and token_info:
+                            st.session_state.summary_content = summary
+                            st.session_state.summary_token_info = token_info
+                            st.session_state.summary_generated = True
+                            st.rerun()
+                        else:
+                            st.warning("The AI summary could not be generated.")
+
+            grouped_docs = group_results(results)
+            st.subheader(f"Top {len(grouped_docs)} Documents Found (containing {len(results)} relevant snippets):")
+            
+            if not grouped_docs:
+                st.info("No relevant documents found for your query.")
+            else:
+                # Iterate through the grouped documents instead of raw chunks
+                for i, group in enumerate(grouped_docs):
+                    meta = group['metadata']
+                    chunks = group['chunks']
+                    
+                    with st.container(border=True):
+                        title = meta.get('title', 'No Title Found')
+                        authors = meta.get('authors', 'No Authors Found')
+                        year = meta.get('year', 'Unknown Year')
+                        doi = meta.get('doi', '')
+                        
+                        source_path = meta.get('source', 'Unknown Source')
+                        # Get the base filename and remove the .md extension.
+                        base_name = source_path.split("\\")[-1]
+                        source = base_name.split('.')[0]
+                        if len(source) <= 4:
+                            source = base_name[:-3]
+
+                        st.markdown(f"### {i+1}. {title}")
+                        st.markdown(f"**Authors:** {authors}")
+                        st.markdown(f"**Year:** {year}")
+                        
+                        if doi:
+                            st.markdown(f"**DOI:** [{doi}](https://doi.org/{doi})")
+                        
+                        st.caption(f"Source: {source} | Found {len(chunks)} relevant snippet(s)")
+
+                        with st.popover("🚩 Report Document Issue", help="Flag this entire document (e.g., wrong metadata, garbled text) for review."):
+                            with st.form(key=f"report_doc_{i}"):
+                                st.write(f"Reporting document: **{title[:40]}...**")
+                                reason = st.text_area("Issue Description:", placeholder="e.g., Wrong year, garbled text throughout...")
+                                
+                                if st.form_submit_button("Submit Report"):
+                                    if not reason:
+                                        st.warning("Please enter a reason.")
+                                    else:
+                                        with st.spinner("Submitting report..."):
+                                            # We use the first chunk's content as a representative sample for the report log
+                                            first_chunk_content = chunks[0].page_content if chunks else "No content available"
+                                            if submit_report_to_sheets(meta, first_chunk_content, reason):
+                                                st.success("Document reported successfully!")
+
+                        for j, chunk in enumerate(chunks):
+                            headers = [chunk.metadata.get(f'Header {h}') for h in range(1, 4) if chunk.metadata.get(f'Header {h}')]
+                            header_label = " > ".join(headers) if headers else "Relevant Snippet"
+                            
+                            with st.expander(f"📄 Snippet {j+1}: {header_label}"):
+                                st.write(chunk.page_content)
+
+    with tab2:
+        st.subheader("Find Top Authors by Subject")
+        st.info("This tool searches the **Full Database** to find authors who have published most frequently on a given subject.")
+        
+        with st.form("author_search_form"):
+            author_query = st.text_input(
+                "Search Subject:", 
+                placeholder="e.g., carbon capture"
+            )
+            doc_scan_k = st.slider(
+                "Number of documents to scan:", 
+                min_value=10, max_value=200, value=50,
+                help="How many of the most relevant documents to scan to find authors. A higher number is more thorough but slower."
+            )
+            author_search_submitted = st.form_submit_button("Find Authors", type="primary", use_container_width=True)
+
+        if author_search_submitted and author_query:
+            with st.spinner(f"Searching Full Database for authors on '{author_query}'..."):
+                try:
+                    # Ensure we are using the full store for this feature
+                    # We need the embeddings and API key which are loaded in main()
+                    full_author_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+                    
+                    # Perform the search to get relevant documents
+                    search_results = full_author_store.similarity_search(
+                        author_query, 
+                        k=doc_scan_k
+                    )
+                    
+                    if not search_results:
+                        st.warning("No documents found for this subject.")
+                    else:
+                        # Use collections.Counter for easy counting
+                        author_counts = collections.Counter()
+                        
+                        # We need to group results first to avoid over-counting authors
+                        # if multiple chunks from the same paper are returned.
+                        grouped_docs = group_results(search_results)
+                        
+                        for group in grouped_docs:
+                            meta = group['metadata']
+                            authors_string = meta.get('authors', 'No Authors Found')
+                            
+                            if authors_string != 'No Authors Found' and authors_string is not None:
+                                # Split authors string by comma and strip whitespace
+                                individual_authors = [name.strip() for name in authors_string.split(',')]
+                                # Update counts for each author, filtering out empty strings
+                                author_counts.update(filter(None, individual_authors))
+                                
+                        if not author_counts:
+                            st.info("Documents were found, but no author information was attached to them.")
+                        else:
+                            # Get the top 10 most common authors
+                            top_10_authors = author_counts.most_common(10)
+                            
+                            st.subheader(f"Top 10 Authors on '{author_query}'")
+                            st.write(f"(From {len(grouped_docs)} unique documents scanned)")
+                            
+                            # Display as a dataframe
+                            df = pd.DataFrame(top_10_authors, columns=["Author", "Relevant Publications Found"])
+                            st.dataframe(df, use_container_width=True)
+
+                except Exception as e:
+                    st.error(f"An error occurred during the author search: {e}")
 
 if __name__ == "__main__":
     main()

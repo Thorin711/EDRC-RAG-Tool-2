@@ -720,11 +720,7 @@ def main():
                 "Search Subject:", 
                 placeholder="e.g., carbon capture"
             )
-            doc_scan_k = st.slider(
-                "Number of documents to scan:", 
-                min_value=10, max_value=200, value=50,
-                help="How many of the most relevant documents to scan to find authors. A higher number is more thorough but slower."
-            )
+            doc_scan_k = 500
             author_search_submitted = st.form_submit_button("Find Authors", type="primary", use_container_width=True)
 
         if author_search_submitted and author_query:

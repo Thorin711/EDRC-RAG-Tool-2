@@ -14,6 +14,7 @@ include:
 - User reporting mechanism for data quality issues (Document-level).
 - Results grouped by parent document.
 - An "Author Explorer" tab to find top authors by subject.
+- A "Query Analyzer" tab to test consultation questions against the database.
 
 The application relies on Streamlit for the UI, LangChain for vector store
 management, Hugging Face for embedding models, and OpenAI for the LLM-powered
@@ -32,6 +33,7 @@ from sentence_transformers import CrossEncoder
 import collections  # Added for counting authors
 import pandas as pd  # Added for displaying author results
 import altair as alt # Added for custom bar chart
+import json         # Added for parsing LLM-generated question lists
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -238,6 +240,69 @@ def improve_query_with_llm(user_query):
         return user_query, None
 
 
+def extract_questions_with_llm(consultation_text):
+    """
+    Uses an LLM to extract a list of questions from a block of text.
+
+    Args:
+        consultation_text (str): The full text of the consultation.
+
+    Returns:
+        list[str] | None: A list of extracted question strings, or None if the API call fails
+                          or returns invalid JSON.
+    """
+    try:
+        prompt = f"""
+        You are a text-processing bot. Your task is to read the following text and extract a list of all explicit and implicit questions.
+        - Ignore headings, numbering, and introductory text.
+        - Focus only on the questions themselves.
+        - Return *only* a valid JSON list of strings. Do not include any preamble, markdown, or other text.
+        
+        Example output:
+        ["What is the national vision?", "Why do you disagree?", "How can ATE support local authorities?"]
+        
+        --- Text to Analyze ---
+        {consultation_text}
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a text-processing bot that returns only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+            max_tokens=1000,
+            response_format={"type": "json_object"} # Use JSON mode
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        
+        # The model is asked for a JSON list, but might return a JSON object 
+        # like {"questions": ["..."]}. We need to handle both.
+        try:
+            # Try to parse the whole string as a list
+            data = json.loads(response_text)
+            if isinstance(data, list):
+                return data
+            # If it's a dictionary, look for a key that contains a list
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if isinstance(value, list):
+                        return value # Return the first list found
+            
+            st.error(f"LLM returned valid JSON, but not in the expected format (list of strings or object with a list): {response_text}")
+            return None
+
+        except json.JSONDecodeError:
+            st.error(f"Failed to decode JSON from LLM response: {response_text}")
+            return None
+        
+    except Exception as e:
+        st.warning(f"Could not extract questions due to an API error: {e}.")
+        return None
+
+
 def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
     """Generates an AI-powered summary of search results with citations.
 
@@ -437,7 +502,7 @@ def main():
         st.stop()
 
     # --- Create Tabs ---
-    tab1, tab2 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer"])
+    tab1, tab2, tab3 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer", "🔎 Query Analyzer"])
 
     with tab1:
         # --- Database Selection ---
@@ -710,7 +775,7 @@ def main():
                             header_label = " > ".join(headers) if headers else "Relevant Snippet"
                             
                             with st.expander(f"📄 Snippet {j+1}: {header_label}"):
-                                st.write(chunk.page_content)
+                            st.write(chunk.page_content)
 
     with tab2:
         st.subheader("Find Top Authors by Subject")
@@ -805,6 +870,93 @@ def main():
 
                 except Exception as e:
                     st.error(f"An error occurred during the author search: {e}")
+
+    with tab3:
+        st.subheader("Query Relevance Analyzer")
+        st.info("Paste in a consultation or text, and this tool will extract the questions and check if the **Full Database** has relevant answers.")
+        
+        if not api_key_present:
+            st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. This feature requires an API key to extract questions.", icon="⚠️")
+        
+        with st.form("query_analyzer_form"):
+            consultation_text = st.text_area(
+                "Paste Consultation Text Here:",
+                placeholder="Paste your full consultation text... e.g., 'Question 1: Do you agree...?'",
+                height=300
+            )
+            relevance_threshold = st.slider(
+                "Relevance Threshold (Reranker Score):",
+                min_value=-5.0, max_value=5.0, value=1.0, step=0.5,
+                help="The minimum score from the reranker model to be considered 'Relevant'. A good starting point is 1.0."
+            )
+            analyze_submitted = st.form_submit_button("Analyze Questions", type="primary", use_container_width=True, disabled=not api_key_present)
+        
+        if analyze_submitted and consultation_text:
+            extracted_questions = None
+            with st.spinner("Step 1/2: Extracting questions from text..."):
+                openai.api_key = st.secrets["OPENAI_API_KEY"]
+                extracted_questions = extract_questions_with_llm(consultation_text)
+
+            if extracted_questions:
+                st.write(f"Found {len(extracted_questions)} questions. Now analyzing relevance against the **Full Database**...")
+                
+                with st.spinner(f"Step 2/2: Analyzing {len(extracted_questions)} questions... This may take a moment."):
+                    try:
+                        # Load the necessary models
+                        reranker_model = load_reranker_model()
+                        full_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+                        
+                        analysis_results = []
+                        progress_bar = st.progress(0, text="Analyzing...")
+
+                        for i, question in enumerate(extracted_questions):
+                            # 1. Perform initial search
+                            initial_results = full_store.similarity_search(question, k=10)
+                            
+                            top_score = -10.0 # Default to a very low score
+                            
+                            if initial_results:
+                                # 2. Rerank the top results
+                                reranker_pairs = [(question, d.page_content) for d in initial_results]
+                                reranker_scores = reranker_model.predict(reranker_pairs)
+                                
+                                # 3. Get the single best score
+                                top_score = max(reranker_scores)
+                            
+                            # 4. Check relevance
+                            is_relevant = top_score > relevance_threshold
+                            analysis_results.append({
+                                "question": question,
+                                "top_score": top_score,
+                                "is_relevant": is_relevant
+                            })
+                            progress_bar.progress((i + 1) / len(extracted_questions), text=f"Analyzing question {i+1}/{len(extracted_questions)}")
+                        
+                        progress_bar.empty()
+                        st.subheader("Analysis Complete")
+                        
+                        # Display results
+                        for result in analysis_results:
+                            with st.container(border=True):
+                                st.markdown(f"**Question:** {result['question']}")
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.metric(label="Top Relevance Score", value=f"{result['top_score']:.2f}")
+                                with col2:
+                                    if result['is_relevant']:
+                                        st.success("✅ Relevant")
+                                    else:
+                                        st.error("❌ Not Relevant")
+
+                    except Exception as e:
+                        st.error(f"An error occurred during relevance analysis: {e}")
+
+            elif extracted_questions is None:
+                # Error messages are handled inside the extract_questions_with_llm function
+                st.error("Question extraction failed. Please check the text or API key.")
+            else:
+                st.info("No questions were found in the provided text.")
 
 if __name__ == "__main__":
     main()

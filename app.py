@@ -288,200 +288,6 @@ def extract_questions_with_llm(consultation_text):
         }
 
         # The model is asked for a JSON list, but might return a JSON object
-                for key, value in data.items():
-                    if isinstance(value, list):
-                        return value # Return the first list found
-            
-            st.error(f"LLM returned valid JSON, but not in the expected format (list of strings or object with a list): {response_text}")
-            return None
-
-        except json.JSONDecodeError:
-            st.error(f"Failed to decode JSON from LLM response: {response_text}")
-            return None
-        
-    except Exception as e:
-        st.warning(f"Could not extract questions due to an API error: {e}.")
-        return None
-
-
-def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
-    """Generates an AI-powered summary of search results with citations.
-
-    This function constructs a detailed prompt containing the user's original
-    question and snippets from the search results. It asks an OpenAI model to
-    synthesize an answer based *only* on the provided context and to cite
-    the sources for each piece of information.
-
-    Args:
-        user_query (str): The original query entered by the user.
-        _search_results (list[langchain.docstore.document.Document]): A list of
-            the top documents returned from the vector search.
-        model (str): The name of the OpenAI model to use.
-        max_completion_tokens (int): The maximum number of tokens to generate for the summary.
-
-    Returns:
-        tuple[str | None, dict | None]: A tuple containing the summary and a
-        dictionary with token usage, or None if the API call fails.
-    """
-    try:
-        context_snippets = []
-        for i, doc in enumerate(_search_results):
-            title = doc.metadata.get('title', 'No Title Found')
-            citation_marker = f"[{i+1}]"
-            context_snippets.append(f"--- Source {citation_marker} ---\nTitle: {title}\nSnippet: {doc.page_content}\n---")
-
-        full_context = "\n\n".join(context_snippets)
-
-        prompt = f"""
-        You are a research assistant. Your task is to synthesize the provided document snippets to answer the user's question. Follow these rules strictly:
-        ## Core Instructions
-
-            1. Source Adherence: Base your entire response exclusively on the information within the "Document Snippets." Do not introduce any outside knowledge or assumptions.
-
-            2. Synthesize, Don't Just List: Weave information from the snippets into a cohesive summary. Instead of quoting directly, integrate and combine related points from different sources to fully answer the user's question.
-
-            3. Precise In-line Citations: You must cite every claim or piece of information. Place citation markers directly after the relevant sentence or clause.
-
-            4. For a single source, use [1].
-
-            5. For multiple sources supporting one statement, combine them like [1, 3].
-
-            6. Handle Insufficient Information: If the provided snippets do not contain enough information to answer the question, state this clearly.
-
-            7. You must use bullet point formatting for the output.
-
-            8. References Section: After your summary, add a ## References section. List all the provided document snippets numerically in bullet point order, corresponding to your in-line citations.
-
-        User's question: "{user_query}"
-
-        --- Document Snippets ---
-        {full_context}
-
-        --- Synthesized Answer ---
-        [Your summary with citations goes here]
-
-        **References**
-        [Your numbered list of references goes here, e.g., "[1] Title of the first paper."]
-        """
-        
-        response = openai.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a helpful research assistant that provides citations."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=1, 
-            max_completion_tokens=max_completion_tokens
-        )
-        summary = response.choices[0].message.content.strip()
-        usage = response.usage
-        token_info = {
-            "input_tokens": usage.prompt_tokens,
-            "output_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        }
-        
-        return summary, token_info
-    except Exception as e:
-        st.error(f"Could not generate summary due to an API error: {e}")
-        return None, None
-
-def group_results(results):
-    """
-    Groups document chunks by their source document.
-    
-    This ensures that if multiple chunks from the same paper are returned,
-    they are displayed together under a single document heading, rather than
-    as separate, repetitive entries in the results list.
-    """
-    grouped = {}
-    ordered_groups = []
-    for doc in results:
-        # Use 'source' as the unique key, fallback to 'title' if missing
-        key = doc.metadata.get('source') or doc.metadata.get('title') or "unknown_doc"
-        
-        if key not in grouped:
-            # Create new group entry
-            group_data = {
-                "metadata": doc.metadata, # Use metadata from the first (highest ranked) chunk
-                "chunks": []
-            }
-            grouped[key] = group_data
-            ordered_groups.append(group_data)
-        
-        # Add chunk to existing group
-        grouped[key]["chunks"].append(doc)
-    
-    return ordered_groups
-
-def main():
-    """Defines the main function to run the Streamlit application.
-
-    This function sets up the Streamlit page configuration, handles the initial
-    database checks and downloads, and builds the user interface. It manages
-    the application's state and logic for handling user input and search
-    execution.
-    """
-    st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
-
-    if 'final_query' not in st.session_state:
-        st.session_state.final_query = ""
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = None
-    if 'original_query' not in st.session_state:
-        st.session_state.original_query = ""
-    if 'summary_generated' not in st.session_state:
-        st.session_state.summary_generated = False
-    if 'summary_content' not in st.session_state:
-        st.session_state.summary_content = None
-    if 'summary_token_info' not in st.session_state:
-        st.session_state.summary_token_info = None
-    if 'selected_collection' not in st.session_state:
-        st.session_state.selected_collection = COLLECTION_FULL # Default to the first option
-
-    # Initialize form widget states if they don't exist
-    if "user_query_input" not in st.session_state:
-        st.session_state.user_query_input = ""
-    if "k_results_input" not in st.session_state:
-        st.session_state.k_results_input = 10
-    if "enhanced_search_toggle" not in st.session_state:
-        st.session_state.enhanced_search_toggle = True
-    if "summary_toggle" not in st.session_state:
-        st.session_state.summary_toggle = True
-    if "start_date_input" not in st.session_state:
-        st.session_state.start_date_input = 2015
-    if "end_date_input" not in st.session_state:
-        st.session_state.end_date_input = 2024
-    if "date_filter_toggle" not in st.session_state:
-        st.session_state.date_filter_toggle = False
-
-    st.title("📚 Research Paper Search")
-    st.write("Ask a question about your documents, and the app will find the most relevant information.")
-    
-    openai_api_key = st.secrets.get("OPENAI_API_KEY")
-    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
-    
-    api_key_present = bool(openai_api_key)
-
-    if not openai_api_key:
-        st.warning("`OPENAI_API_KEY` not found in Streamlit secrets. AI-powered features will be disabled.", icon="⚠️")
-    if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect to database.", icon="🚨")
-        st.stop()    
-        
-    DB_OPTIONS = {
-        "Full Database": COLLECTION_FULL,
-        "Journal Articles Only": COLLECTION_JOURNAL,
-        "EDRC Only": COLLECTION_EDRC,
-    }
-    
-    # --- Load Models and Vector Store (needed for both tabs) ---
-    try:
-        embeddings = load_embedding_model()
-        
-        # We still need to load the *selected* store for the main search tab
-        # The author tab will load the full store independently if needed
-        
         try:
             # Try to parse the whole string as a list
             data = json.loads(response_text)
@@ -506,7 +312,23 @@ def main():
 
 
 def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
+    # --- Load Models and Vector Store (needed for all tabs) ---
+    try:
+        embeddings = load_embedding_model()
+    except Exception as e:
+        st.error(f"An error occurred while loading the embedding model: {e}")
+        st.stop()
+        
+    # --- Create Tabs ---
+    tab1, tab2, tab3 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer", "🔎 Query Analyzer"])
+
+    with tab1:
         # --- Database Selection ---
+        try:
+            current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
+        except ValueError:
+            current_collection_index = 0 # Default to first item if state is invalid
+            
         db_choice = st.radio(
             "Select database to search:",
             options=DB_OPTIONS.keys(),
@@ -548,7 +370,18 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
             help="Choose the model for AI summarization. Query enhancement is fixed to gpt-4o-mini for efficiency."
         )
 
+        # --- Load the vector store *for this tab* based on selection ---
         try:
+            if st.session_state.selected_collection == COLLECTION_FULL:
+                vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+            elif st.session_state.selected_collection == COLLECTION_JOURNAL:
+                vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
+            else:
+                vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
+
+            # Get the label for the selected choice
+            db_choice_label = [key for key, value in DB_OPTIONS.items() if value == st.session_state.selected_collection][0]
+
             count_result = vector_store.client.count(
                 collection_name=st.session_state.selected_collection, 
                 exact=True

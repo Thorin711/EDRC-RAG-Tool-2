@@ -775,7 +775,7 @@ def main():
                             header_label = " > ".join(headers) if headers else "Relevant Snippet"
                             
                             with st.expander(f"📄 Snippet {j+1}: {header_label}"):
-                            st.write(chunk.page_content)
+                                st.write(chunk.page_content)
 
     with tab2:
         st.subheader("Find Top Authors by Subject")

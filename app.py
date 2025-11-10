@@ -31,6 +31,7 @@ import tiktoken
 from sentence_transformers import CrossEncoder
 import collections  # Added for counting authors
 import pandas as pd  # Added for displaying author results
+import altair as alt # Added for custom bar chart
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -729,7 +730,7 @@ def main():
 
         if author_search_submitted and author_query:
             # Define a fixed, large number of documents to scan
-            DOC_SCAN_K = 500
+            DOC_SCAN_K = 1000
             with st.spinner(f"Searching Full Database for authors on '{author_query}' (scanning top {DOC_SCAN_K} docs)..."):
                 try:
                     # Ensure we are using the full store for this feature
@@ -771,13 +772,33 @@ def main():
                             st.subheader(f"Top 10 Authors on '{author_query}'")
                             st.write(f"(From {len(grouped_docs)} unique documents found in the top {DOC_SCAN_K} relevant docs)")
                             
-                            # Display as a dataframe
+                            # Create DataFrame
                             df = pd.DataFrame(top_10_authors, columns=["Author", "Relevant Publications Found"])
-                            # st.dataframe(df, use_container_width=True) # Old line
                             
-                            # New line: Display as a bar chart
-                            # We set the index to "Author" so the bar chart uses authors as the x-axis labels.
-                            st.bar_chart(df.set_index("Author"), use_container_width=True)
+                            # 1. Calculate Y-axis limit
+                            max_val = df["Relevant Publications Found"].max()
+                            # Calculate nearest 5 above max (e.g., 12->15, 10->15, 9->10, 0->5)
+                            ylim_top = (max_val // 5 + 1) * 5
+
+                            # 2. Create Altair chart
+                            chart = alt.Chart(df).mark_bar().encode(
+                                # 3. Set X-axis: Use 'Author' column, disable axis sorting (sort=None)
+                                #    This uses the DataFrame's built-in order (already sorted by count)
+                                x=alt.X('Author', sort=None),
+                                
+                                # 1. Set Y-axis: Use 'Relevant Publications Found'
+                                #    Set scale domain from 0 to our calculated top limit
+                                y=alt.Y('Relevant Publications Found', scale=alt.Scale(domain=[0, ylim_top])),
+                                
+                                # Add tooltips for interactivity
+                                tooltip=['Author', 'Relevant Publications Found']
+                            ).interactive()
+
+                            # 3. Display the chart, using container width
+                            st.altair_chart(chart, use_container_width=True)
+
+                            # Old line:
+                            # st.bar_chart(df.set_index("Author"), use_container_width=True)
 
                 except Exception as e:
                     st.error(f"An error occurred during the author search: {e}")

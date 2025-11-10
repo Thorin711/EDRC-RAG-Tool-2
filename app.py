@@ -758,10 +758,13 @@ def main():
                             authors_string = meta.get('authors', 'No Authors Found')
                             
                             if authors_string != 'No Authors Found' and authors_string is not None:
-                                # Split authors string by comma and strip whitespace
-                                individual_authors = [name.strip() for name in authors_string.split(',')]
-                                # Update counts for each author, filtering out empty strings
-                                author_counts.update(filter(None, individual_authors))
+                                # Split authors string, strip whitespace, and filter out unwanted values
+                                individual_authors = [
+                                    name.strip() for name in authors_string.split(',')
+                                    if name.strip() and name.strip().lower() not in ['not available', 'n/a']
+                                ]
+                                # Update counts with the cleaned list
+                                author_counts.update(individual_authors)
                                 
                         if not author_counts:
                             st.info("Documents were found, but no author information was attached to them.")
@@ -783,8 +786,8 @@ def main():
                             # 2. Create Altair chart
                             chart = alt.Chart(df).mark_bar().encode(
                                 # 3. Set X-axis: Use 'Author' column, disable axis sorting (sort=None)
-                                #    This uses the DataFrame's built-in order (already sorted by count)
-                                x=alt.X('Author', sort=None),
+                                #    AND explicitly set labelAngle to 0 to prevent rotation.
+                                x=alt.X('Author', sort=None, axis=alt.Axis(labelAngle=0)),
                                 
                                 # 1. Set Y-axis: Use 'Relevant Publications Found'
                                 #    Set scale domain from 0 to our calculated top limit

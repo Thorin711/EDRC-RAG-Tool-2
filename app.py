@@ -248,8 +248,9 @@ def extract_questions_with_llm(consultation_text):
         consultation_text (str): The full text of the consultation.
 
     Returns:
-        list[str] | None: A list of extracted question strings, or None if the API call fails
-                          or returns invalid JSON.
+        tuple[list[str] | None, dict | None]: A tuple containing:
+            - A list of extracted question strings (or None on failure).
+            - A dictionary with token usage (or None on API failure).
     """
     try:
         prompt = f"""
@@ -278,29 +279,37 @@ def extract_questions_with_llm(consultation_text):
         
         response_text = response.choices[0].message.content.strip()
         
+        # Capture token usage
+        usage = response.usage
+        token_info = {
+            "input_tokens": usage.prompt_tokens,
+            "output_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
+        
         # The model is asked for a JSON list, but might return a JSON object 
         # like {"questions": ["..."]}. We need to handle both.
         try:
             # Try to parse the whole string as a list
             data = json.loads(response_text)
             if isinstance(data, list):
-                return data
+                return data, token_info
             # If it's a dictionary, look for a key that contains a list
             if isinstance(data, dict):
                 for key, value in data.items():
                     if isinstance(value, list):
-                        return value # Return the first list found
+                        return value, token_info # Return the first list found
             
             st.error(f"LLM returned valid JSON, but not in the expected format (list of strings or object with a list): {response_text}")
-            return None
+            return None, token_info # Return token info even on parse error
 
         except json.JSONDecodeError:
             st.error(f"Failed to decode JSON from LLM response: {response_text}")
-            return None
+            return None, token_info # Return token info even on decode error
         
     except Exception as e:
         st.warning(f"Could not extract questions due to an API error: {e}.")
-        return None
+        return None, None # API error, no token info
 
 
 def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
@@ -893,9 +902,16 @@ def main():
         
         if analyze_submitted and consultation_text:
             extracted_questions = None
+            extraction_token_info = None # Initialize token info
+            
             with st.spinner("Step 1/2: Extracting questions from text..."):
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                extracted_questions = extract_questions_with_llm(consultation_text)
+                # Capture both return values
+                extracted_questions, extraction_token_info = extract_questions_with_llm(consultation_text)
+
+            # Display token usage if it was returned
+            if extraction_token_info:
+                display_token_usage(extraction_token_info, "gpt-4o-mini", "Question Extraction")
 
             if extracted_questions:
                 st.write(f"Found {len(extracted_questions)} questions. Now analyzing relevance against the **Full Database**...")
@@ -953,8 +969,9 @@ def main():
                         st.error(f"An error occurred during relevance analysis: {e}")
 
             elif extracted_questions is None:
-                # Error messages are handled inside the extract_questions_with_llm function
-                st.error("Question extraction failed. Please check the text or API key.")
+                # Error messages are already handled inside the extract_questions_with_llm function
+                # (e.g., API error, JSON decode error)
+                pass
             else:
                 st.info("No questions were found in the provided text.")
 

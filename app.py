@@ -720,11 +720,17 @@ def main():
                 "Search Subject:", 
                 placeholder="e.g., carbon capture"
             )
-            doc_scan_k = 500
+            # doc_scan_k = st.slider(
+            #     "Number of documents to scan:", 
+            #     min_value=10, max_value=200, value=50,
+            #     help="How many of the most relevant documents to scan to find authors. A higher number is more thorough but slower."
+            # )
             author_search_submitted = st.form_submit_button("Find Authors", type="primary", use_container_width=True)
 
         if author_search_submitted and author_query:
-            with st.spinner(f"Searching Full Database for authors on '{author_query}'..."):
+            # Define a fixed, large number of documents to scan
+            DOC_SCAN_K = 500
+            with st.spinner(f"Searching Full Database for authors on '{author_query}' (scanning top {DOC_SCAN_K} docs)..."):
                 try:
                     # Ensure we are using the full store for this feature
                     # We need the embeddings and API key which are loaded in main()
@@ -733,7 +739,7 @@ def main():
                     # Perform the search to get relevant documents
                     search_results = full_author_store.similarity_search(
                         author_query, 
-                        k=doc_scan_k
+                        k=DOC_SCAN_K
                     )
                     
                     if not search_results:
@@ -763,11 +769,15 @@ def main():
                             top_10_authors = author_counts.most_common(10)
                             
                             st.subheader(f"Top 10 Authors on '{author_query}'")
-                            st.write(f"(From {len(grouped_docs)} unique documents scanned)")
+                            st.write(f"(From {len(grouped_docs)} unique documents found in the top {DOC_SCAN_K} relevant docs)")
                             
                             # Display as a dataframe
                             df = pd.DataFrame(top_10_authors, columns=["Author", "Relevant Publications Found"])
-                            st.dataframe(df, use_container_width=True)
+                            # st.dataframe(df, use_container_width=True) # Old line
+                            
+                            # New line: Display as a bar chart
+                            # We set the index to "Author" so the bar chart uses authors as the x-axis labels.
+                            st.bar_chart(df.set_index("Author"), use_container_width=True)
 
                 except Exception as e:
                     st.error(f"An error occurred during the author search: {e}")

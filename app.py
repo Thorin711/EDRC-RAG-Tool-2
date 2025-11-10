@@ -248,8 +248,9 @@ def extract_questions_with_llm(consultation_text):
         consultation_text (str): The full text of the consultation.
 
     Returns:
-        list[str] | None: A list of extracted question strings, or None if the API call fails
-                          or returns invalid JSON.
+        tuple[list[str] | None, dict | None]: A tuple containing the list of
+                                              extracted question strings and
+                                              token info, or (None, None).
     """
     try:
         prompt = f"""
@@ -278,15 +279,15 @@ def extract_questions_with_llm(consultation_text):
         
         response_text = response.choices[0].message.content.strip()
         
-        # The model is asked for a JSON list, but might return a JSON object 
-        # like {"questions": ["..."]}. We need to handle both.
-        try:
-            # Try to parse the whole string as a list
-            data = json.loads(response_text)
-            if isinstance(data, list):
-                return data
-            # If it's a dictionary, look for a key that contains a list
-            if isinstance(data, dict):
+        # Get token usage
+        usage = response.usage
+        token_info = {
+            "input_tokens": usage.prompt_tokens,
+            "output_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        }
+
+        # The model is asked for a JSON list, but might return a JSON object
                 for key, value in data.items():
                     if isinstance(value, list):
                         return value # Return the first list found
@@ -482,29 +483,29 @@ def main():
         # The author tab will load the full store independently if needed
         
         try:
-            current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
-        except ValueError:
-            current_collection_index = 0 # Default to first item if state is invalid
+            # Try to parse the whole string as a list
+            data = json.loads(response_text)
+            if isinstance(data, list):
+                return data, token_info
+            # If it's a dictionary, look for a key that contains a list
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if isinstance(value, list):
+                        return value, token_info # Return the first list found
+            
+            st.error(f"LLM returned valid JSON, but not in the expected format (list of strings or object with a list): {response_text}")
+            return None, None
 
-        # Store the db_choice label for use in the main tab caption
-        db_choice_label = list(DB_OPTIONS.keys())[current_collection_index]
-        selected_collection_name = st.session_state.selected_collection
-        
-        if selected_collection_name == COLLECTION_FULL:
-            vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
-        elif selected_collection_name == COLLECTION_JOURNAL:
-            vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
-        else:
-            vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
+        except json.JSONDecodeError:
+            st.error(f"Failed to decode JSON from LLM response: {response_text}")
+            return None, None
         
     except Exception as e:
-        st.error(f"An error occurred while loading the models or database: {e}")
-        st.stop()
+        st.warning(f"Could not extract questions due to an API error: {e}.")
+        return None, None
 
-    # --- Create Tabs ---
-    tab1, tab2, tab3 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer", "🔎 Query Analyzer"])
 
-    with tab1:
+def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
         # --- Database Selection ---
         db_choice = st.radio(
             "Select database to search:",
@@ -893,11 +894,15 @@ def main():
         
         if analyze_submitted and consultation_text:
             extracted_questions = None
+            extraction_token_info = None
             with st.spinner("Step 1/2: Extracting questions from text..."):
                 openai.api_key = st.secrets["OPENAI_API_KEY"]
-                extracted_questions = extract_questions_with_llm(consultation_text)
+                extracted_questions, extraction_token_info = extract_questions_with_llm(consultation_text)
 
             if extracted_questions:
+                if extraction_token_info:
+                    display_token_usage(extraction_token_info, "gpt-4o-mini", "Question Extraction")
+
                 st.write(f"Found {len(extracted_questions)} questions. Now analyzing relevance against the **Full Database**...")
                 
                 with st.spinner(f"Step 2/2: Analyzing {len(extracted_questions)} questions... This may take a moment."):

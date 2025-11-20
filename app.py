@@ -35,10 +35,10 @@ import pandas as pd  # Added for displaying author results
 import altair as alt # Added for custom bar chart
 import json         # Added for parsing LLM-generated question lists
 import qdrant_client
-import langchain_qdrant
-# This will prove definitively what version is running in the cloud container
-st.sidebar.error(f"Debug: Qdrant Client Version: {qdrant_client.__version__}")
-st.sidebar.error(f"Debug: LC Qdrant Version: {langchain_qdrant.__version__}")
+import streamlit as st
+
+# This will print the exact path Python is loading the file from
+st.write(f"Loading qdrant_client from: {qdrant_client.__file__}")
 
 # Change this import to the modern 'QdrantVectorStore' class
 from langchain_qdrant import QdrantVectorStore 

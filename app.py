@@ -35,6 +35,14 @@ import pandas as pd  # Added for displaying author results
 import altair as alt # Added for custom bar chart
 import json         # Added for parsing LLM-generated question lists
 
+# This will prove definitively what version is running in the cloud container
+st.sidebar.error(f"Debug: Qdrant Client Version: {qdrant_client.__version__}")
+st.sidebar.error(f"Debug: LC Qdrant Version: {langchain_qdrant.__version__}")
+
+# Change this import to the modern 'QdrantVectorStore' class
+from langchain_qdrant import QdrantVectorStore 
+from qdrant_client import QdrantClient
+
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -79,12 +87,20 @@ def load_embedding_model():
 
 @st.cache_resource
 def load_full_store(_embeddings, _url, _api_key):
-    """Loads and caches the FULL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_FULL,
-        url=_url,
+    """Loads and caches the FULL vector store with explicit client creation."""
+    
+    # 1. Manually create the client. This ensures we aren't using a hidden default.
+    client = QdrantClient(
+        url=_url, 
         api_key=_api_key,
+        prefer_grpc=True # Optional: often more stable for cloud
+    )
+    
+    # 2. Use QdrantVectorStore (new class) instead of Qdrant (legacy alias)
+    return QdrantVectorStore(
+        client=client,
+        collection_name=COLLECTION_FULL,
+        embedding=_embeddings,
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )

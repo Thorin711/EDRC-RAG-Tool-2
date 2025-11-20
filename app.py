@@ -103,11 +103,15 @@ def load_full_store(_embeddings, _url, _api_key):
 @st.cache_resource
 def load_journal_store(_embeddings, _url, _api_key):
     """Loads and caches the JOURNAL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_JOURNAL,
-        url=_url,
+    client = QdrantClient(
+        url=_url, 
         api_key=_api_key,
+        prefer_grpc=True
+    )
+    return QdrantVectorStore(
+        client=client,
+        collection_name=COLLECTION_JOURNAL,
+        embedding=_embeddings,
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )
@@ -115,11 +119,15 @@ def load_journal_store(_embeddings, _url, _api_key):
 @st.cache_resource
 def load_edrc_store(_embeddings, _url, _api_key):
     """Loads and caches the EDRC vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_EDRC,
-        url=_url,
+    client = QdrantClient(
+        url=_url, 
         api_key=_api_key,
+        prefer_grpc=True
+    )
+    return QdrantVectorStore(
+        client=client,
+        collection_name=COLLECTION_EDRC,
+        embedding=_embeddings,
         content_payload_key="page_content", 
         metadata_payload_key="metadata"
     )

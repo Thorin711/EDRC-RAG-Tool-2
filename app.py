@@ -475,6 +475,8 @@ def main():
         st.session_state.enhanced_search_toggle = True
     if "summary_toggle" not in st.session_state:
         st.session_state.summary_toggle = True
+    if "reranker_toggle" not in st.session_state:
+        st.session_state.reranker_toggle = True
     if "start_date_input" not in st.session_state:
         st.session_state.start_date_input = 2015
     if "end_date_input" not in st.session_state:

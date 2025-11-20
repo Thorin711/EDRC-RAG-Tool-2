@@ -34,7 +34,8 @@ import collections  # Added for counting authors
 import pandas as pd  # Added for displaying author results
 import altair as alt # Added for custom bar chart
 import json         # Added for parsing LLM-generated question lists
-
+import qdrant_client
+import langchain_qdrant
 # This will prove definitively what version is running in the cloud container
 st.sidebar.error(f"Debug: Qdrant Client Version: {qdrant_client.__version__}")
 st.sidebar.error(f"Debug: LC Qdrant Version: {langchain_qdrant.__version__}")

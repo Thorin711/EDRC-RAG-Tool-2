@@ -8,8 +8,8 @@ tiktoken
 langchain-core
 langchain-text-splitters
 langchain-huggingface
-langchain-qdrant
-qdrant-client>=1.8.0
+langchain-qdrant>=0.1.0
+qdrant-client>=1.9.0
 beautifulsoup4
 lxml
 requests

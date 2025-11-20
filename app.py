@@ -36,14 +36,8 @@ import altair as alt # Added for custom bar chart
 import json         # Added for parsing LLM-generated question lists
 import qdrant_client
 import streamlit as st
-
-# This will print the exact path Python is loading the file from
-st.write(f"Loading qdrant_client from: {qdrant_client.__file__}")
-
-# Change this import to the modern 'QdrantVectorStore' class
 from langchain_qdrant import QdrantVectorStore 
 from qdrant_client import QdrantClient
-
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 

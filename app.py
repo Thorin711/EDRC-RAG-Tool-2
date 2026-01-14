@@ -635,7 +635,7 @@ def main():
                     key="date_filter_toggle"
                 )
 
-            submitted = st.form_submit_button("Search", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Search", type="primary", width='stretch')
 
         if submitted and user_query:
             st.session_state.search_results = None
@@ -672,7 +672,7 @@ def main():
                     key="reranker_toggle"
                 )
                 
-                run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
+                run_final_search = st.form_submit_button("Run Search", type="primary", width='stretch')
 
             if run_final_search:
                 query_to_use = edited_query
@@ -821,7 +821,7 @@ def main():
             #     min_value=10, max_value=200, value=50,
             #     help="How many of the most relevant documents to scan to find authors. A higher number is more thorough but slower."
             # )
-            author_search_submitted = st.form_submit_button("Find Authors", type="primary", use_container_width=True)
+            author_search_submitted = st.form_submit_button("Find Authors", type="primary", width='stretch')
 
         if author_search_submitted and author_query:
             # Define a fixed, large number of documents to scan
@@ -893,10 +893,10 @@ def main():
                             ).interactive()
 
                             # 3. Display the chart, using container width
-                            st.altair_chart(chart, use_container_width=True)
+                            st.altair_chart(chart, width='stretch')
 
                             # Old line:
-                            # st.bar_chart(df.set_index("Author"), use_container_width=True)
+                            # st.bar_chart(df.set_index("Author"), width='stretch')
 
                 except Exception as e:
                     st.error(f"An error occurred during the author search: {e}")
@@ -919,7 +919,7 @@ def main():
                 min_value=-5.0, max_value=5.0, value=1.0, step=0.5,
                 help="The minimum score from the reranker model to be considered 'Relevant'. A good starting point is 1.0."
             )
-            analyze_submitted = st.form_submit_button("Analyze Questions", type="primary", use_container_width=True, disabled=not api_key_present)
+            analyze_submitted = st.form_submit_button("Analyze Questions", type="primary", width='stretch', disabled=not api_key_present)
         
         if analyze_submitted and consultation_text:
             extracted_questions = None

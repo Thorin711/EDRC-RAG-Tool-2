@@ -212,6 +212,37 @@ def submit_report_to_sheets(doc_metadata, chunk_content, reason):
     except Exception as e:
         st.error(f"Failed to submit report due to an error: {e}")
         return False
+        
+def log_usage_stats(user_query, collection_name, results_count, enhanced_mode, summary_mode):
+    """
+    Logs anonymous usage stats to the 'Usage Logs' sheet.
+    """
+    try:
+        # Check for secrets just like you do for reports
+        if "gcp_service_account" not in st.secrets:
+            return # Fail silently so users aren't disturbed
+
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPES)
+        client = gspread.authorize(creds)
+        
+        # Open the specific worksheet
+        sheet = client.open(REPORT_SHEET_NAME).worksheet("Usage Logs")
+        
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        row = [
+            timestamp,
+            user_query,
+            collection_name,
+            results_count,
+            str(enhanced_mode),
+            str(summary_mode)
+        ]
+        
+        sheet.append_row(row)
+    except Exception as e:
+        # Print to console for admin debugging, but don't show user an error
+        print(f"Logging failed: {e}")
 
 def improve_query_with_llm(user_query):
     """Improves a user's query using an LLM for better search results.
@@ -375,7 +406,7 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
 
             6. Handle Insufficient Information: If the provided snippets do not contain enough information to answer the question, state this clearly.
 
-            7. You must use bullet point formatting for the output.
+            7. You must use a paragraph format, grouping information by theme.
 
             8. References Section: After your summary, add a ## References section. List all the provided document snippets numerically in bullet point order, corresponding to your in-line citations.
 
@@ -700,7 +731,13 @@ def main():
                                 st.session_state.search_results = reranked
                         else:
                             st.session_state.search_results = initial_results
-
+                        log_usage_stats(
+                            user_query=query_to_use,
+                            collection_name=st.session_state.selected_collection,
+                            results_count=len(st.session_state.search_results),
+                            enhanced_mode=st.session_state.enhanced_search_toggle,
+                            summary_mode=st.session_state.summary_toggle
+                        )
                     except Exception as e:
                         st.error(f"An error occurred during the search: {e}")
                 st.rerun()
@@ -995,6 +1032,8 @@ def main():
                 pass
             else:
                 st.info("No questions were found in the provided text.")
+    st.markdown("---")
+    st.caption("🔒 Anonymous usage statistics are collected to help improve this tool. No personal data or IP addresses are stored.")
 
 if __name__ == "__main__":
     main()

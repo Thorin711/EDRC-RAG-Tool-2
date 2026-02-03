@@ -1,0 +1,17 @@
+streamlit
+langchain-qdrant
+langchain-huggingface
+langchain-community
+openai
+sentence-transformers
+tiktoken
+langchain-core
+langchain-text-splitters
+langchain-huggingface
+langchain-qdrant>=0.1.0
+qdrant-client>=1.9.0
+beautifulsoup4
+lxml
+requests
+gspread
+oauth2client

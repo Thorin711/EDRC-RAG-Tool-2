@@ -1,3 +1,14 @@
+---
+title: EDRC RAG App
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.39.0
+app_file: app.py
+pinned: false
+---
+
 # Research Paper RAG Tool
 
 This repository contains a Retrieval-Augmented Generation (RAG) tool designed to search and synthesize information from a collection of research papers. The tool consists of a suite of Streamlit applications for data processing, metadata administration, and user-facing search.

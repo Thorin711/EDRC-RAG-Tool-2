@@ -91,7 +91,7 @@ def load_full_store(_embeddings, _url, _api_key):
     client = QdrantClient(
         url=_url, 
         api_key=_api_key,
-        prefer_grpc=True 
+        prefer_grpc-False 
     )
     return QdrantVectorStore(
         client=client,
@@ -107,7 +107,7 @@ def load_journal_store(_embeddings, _url, _api_key):
     client = QdrantClient(
         url=_url, 
         api_key=_api_key,
-        prefer_grpc=True
+        prefer_grpc-False
     )
     return QdrantVectorStore(
         client=client,
@@ -123,7 +123,7 @@ def load_edrc_store(_embeddings, _url, _api_key):
     client = QdrantClient(
         url=_url, 
         api_key=_api_key,
-        prefer_grpc=True
+        prefer_grpc-False
     )
     return QdrantVectorStore(
         client=client,

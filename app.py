@@ -68,9 +68,6 @@ def rerank_results(query, docs, reranker_model, top_k=10):
 
 EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
-# Default fallback URL if not found in secrets
-DEFAULT_QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
-
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
 COLLECTION_EDRC = "edrc_papers"
@@ -448,7 +445,7 @@ def main():
     qdrant_api_key = get_secret("QDRANT_API_KEY")
     
     # Try to get URL from secret, otherwise use the hardcoded default
-    qdrant_url = get_secret("QDRANT_URL") or DEFAULT_QDRANT_URL
+    qdrant_url = get_secret("QDRANT_URL")
     
     api_key_present = bool(openai_api_key)
 

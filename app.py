@@ -565,7 +565,7 @@ def main():
                 k_results = st.slider(
                     "Number of results to return:", 
                     min_value=1, max_value=30, 
-                    key="k_results_input"
+                    key="k_results_input", value = 10
                 )
             with col2:
                 use_enhanced_search = st.toggle(
@@ -585,12 +585,12 @@ def main():
             date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
             with date_col1:
                 start_date = st.number_input(
-                    "Start Year", min_value=1900, max_value=2100, step=1,
+                    "Start Year", min_value=2015, max_value=2050, step=1, value=2015,
                     key="start_date_input"
                 )
             with date_col2:
                 end_date = st.number_input(
-                    "End Year", min_value=1900, max_value=2100, step=1,
+                    "End Year", min_value=2015, max_value=2050, step=1, value=2015,
                     key="end_date_input"
                 )
             with date_col3:

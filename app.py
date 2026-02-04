@@ -565,7 +565,7 @@ def main():
                 k_results = st.slider(
                     "Number of results to return:", 
                     min_value=1, max_value=30, 
-                    key="k_results_input", value = 10
+                    key="k_results_input",
                 )
             with col2:
                 use_enhanced_search = st.toggle(

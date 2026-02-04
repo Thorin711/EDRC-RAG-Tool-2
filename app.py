@@ -39,7 +39,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- UNIVERSAL SECRET GETTER ---
-def get_secret(key):
+def use_container_width=True(key):
     """
     Retrieves a secret from environment variables (Hugging Face) 
     or Streamlit secrets (Local/Streamlit Cloud).
@@ -234,8 +234,8 @@ def improve_query_with_llm(user_query):
         User's question: "{user_query}"
         """
 
-        # Fix: Fetch key using get_secret
-        openai.api_key = get_secret("OPENAI_API_KEY")
+        # Fix: Fetch key using use_container_width=True
+        openai.api_key = use_container_width=True("OPENAI_API_KEY")
 
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -277,8 +277,8 @@ def extract_questions_with_llm(consultation_text):
         {consultation_text}
         """
         
-        # Fix: Fetch key using get_secret
-        openai.api_key = get_secret("OPENAI_API_KEY")
+        # Fix: Fetch key using use_container_width=True
+        openai.api_key = use_container_width=True("OPENAI_API_KEY")
 
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -357,8 +357,8 @@ def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", 
         [Your numbered list of references goes here, e.g., "[1] Title of the first paper."]
         """
         
-        # Fix: Fetch key using get_secret (ensure it's set before call)
-        openai.api_key = get_secret("OPENAI_API_KEY")
+        # Fix: Fetch key using use_container_width=True (ensure it's set before call)
+        openai.api_key = use_container_width=True("OPENAI_API_KEY")
 
         response = openai.chat.completions.create(
             model=model,
@@ -454,11 +454,11 @@ def main():
     st.write("Ask a question about your documents, and the app will find the most relevant information.")
     
     # --- UNIVERSAL KEY LOADING ---
-    openai_api_key = get_secret("OPENAI_API_KEY")
-    qdrant_api_key = get_secret("QDRANT_API_KEY")
+    openai_api_key = use_container_width=True("OPENAI_API_KEY")
+    qdrant_api_key = use_container_width=True("QDRANT_API_KEY")
     
     # Try to get URL from secret, otherwise use the hardcoded default
-    qdrant_url = get_secret("QDRANT_URL")
+    qdrant_url = use_container_width=True("QDRANT_URL")
     
     api_key_present = bool(openai_api_key)
 
@@ -611,8 +611,8 @@ def main():
 
             if use_enhanced_search and api_key_present:
                 with st.spinner("Improving query..."):
-                    # Use get_secret implicitly inside the function or set it here
-                    openai.api_key = get_secret("OPENAI_API_KEY") 
+                    # Use use_container_width=True implicitly inside the function or set it here
+                    openai.api_key = use_container_width=True("OPENAI_API_KEY") 
                     improved_query, token_info = improve_query_with_llm(user_query)
 
                     if token_info:
@@ -704,7 +704,7 @@ def main():
 
                 if proceed_with_summary:
                     with st.spinner("Thinking..."):
-                        openai.api_key = get_secret("OPENAI_API_KEY") 
+                        openai.api_key = use_container_width=True("OPENAI_API_KEY") 
                         summary, token_info = summarize_results_with_llm(st.session_state.original_query, st.session_state.search_results, model=selected_model, max_completion_tokens=dynamic_max_tokens)
 
                         if summary and token_info:
@@ -856,7 +856,7 @@ def main():
             extraction_token_info = None 
             
             with st.spinner("Step 1/2: Extracting questions from text..."):
-                openai.api_key = get_secret("OPENAI_API_KEY") 
+                openai.api_key = use_container_width=True("OPENAI_API_KEY") 
                 extracted_questions, extraction_token_info = extract_questions_with_llm(consultation_text)
 
             if extraction_token_info:

@@ -405,18 +405,18 @@ def main():
     """Defines the main function to run the Streamlit application."""
     st.set_page_config(page_title="Research Paper Search", page_icon="📚", layout="wide")
     
-    --- DEBUG: LIST ALL KEYS ---
-    st.write("### Debug: Environment Keys Available")
-    # Print keys from os.environ
-    env_keys = [k for k in os.environ.keys()]
-    st.write("OS Environ Keys:", env_keys)
+    # # --- DEBUG: LIST ALL KEYS ---
+    # st.write("### Debug: Environment Keys Available")
+    # # Print keys from os.environ
+    # env_keys = [k for k in os.environ.keys()]
+    # st.write("OS Environ Keys:", env_keys)
     
-    # Check specifically for the key
-    if "OPENAI_API_KEY" in os.environ:
-        st.success(f"✅ OPENAI_API_KEY found in os.environ! Length: {len(os.environ['OPENAI_API_KEY'])}")
-    else:
-        st.error("❌ OPENAI_API_KEY NOT found in os.environ")
-    # ----------------------------
+    # # Check specifically for the key
+    # if "OPENAI_API_KEY" in os.environ:
+        # st.success(f"✅ OPENAI_API_KEY found in os.environ! Length: {len(os.environ['OPENAI_API_KEY'])}")
+    # else:
+        # st.error("❌ OPENAI_API_KEY NOT found in os.environ")
+    # # ----------------------------
     
     if 'final_query' not in st.session_state:
         st.session_state.final_query = ""

@@ -626,11 +626,11 @@ def main():
                 st.info("Review and edit the query below, then click 'Run Search'.")
                 edited_query = st.text_area("Suggested Query:", value=st.session_state.final_query, height=100)
                 
-                # use_reranker = st.toggle(
-                    # "Use Reranker (BGE-Large)",
-                    # help="Re-rank top search results using a cross-encoder model for higher precision.",
-                    # key="reranker_toggle"
-                # )
+                use_reranker = st.toggle(
+                    "Use Reranker (BGE-Large)",
+                    help="Re-rank top search results using a cross-encoder model for higher precision.",
+                    key="reranker_toggle"
+                )
                 
                 run_final_search = st.form_submit_button("Run Search", type="primary", use_container_width=True)
 

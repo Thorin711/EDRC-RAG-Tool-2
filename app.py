@@ -66,7 +66,7 @@ def get_secret(key):
     # reranked_docs = [doc for doc, _ in reranked[:top_k]]
     # return reranked_docs
 
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
+# EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 

@@ -55,7 +55,7 @@ def get_secret(key):
         return None
 # -------------------------------
 
-@st.cache_resource
+# @st.cache_resource
 # def load_reranker_model():
     # return CrossEncoder("BAAI/bge-reranker-large")
 

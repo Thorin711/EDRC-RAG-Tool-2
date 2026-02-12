@@ -55,18 +55,18 @@ def get_secret(key):
         return None
 # -------------------------------
 
-# @st.cache_resource
-# def load_reranker_model():
-    # return CrossEncoder("BAAI/bge-reranker-large")
+@st.cache_resource
+def load_reranker_model():
+    return CrossEncoder("BAAI/bge-reranker-large")
 
-# def rerank_results(query, docs, reranker_model, top_k=10):
-    # pairs = [(query, d.page_content) for d in docs]
-    # scores = reranker_model.predict(pairs)
-    # reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
-    # reranked_docs = [doc for doc, _ in reranked[:top_k]]
-    # return reranked_docs
+def rerank_results(query, docs, reranker_model, top_k=10):
+    pairs = [(query, d.page_content) for d in docs]
+    scores = reranker_model.predict(pairs)
+    reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+    reranked_docs = [doc for doc, _ in reranked[:top_k]]
+    return reranked_docs
 
-# EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
+EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 
 COLLECTION_FULL = "full_papers" 
 COLLECTION_JOURNAL = "journal_papers" 
@@ -441,8 +441,8 @@ def main():
         st.session_state.enhanced_search_toggle = True
     if "summary_toggle" not in st.session_state:
         st.session_state.summary_toggle = True
-    # if "reranker_toggle" not in st.session_state:
-        # st.session_state.reranker_toggle = True
+    if "reranker_toggle" not in st.session_state:
+        st.session_state.reranker_toggle = True
     if "start_date_input" not in st.session_state:
         st.session_state.start_date_input = 2015
     if "end_date_input" not in st.session_state:

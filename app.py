@@ -586,7 +586,6 @@ def main():
             with date_col1:
                 start_date = st.number_input(
                     "Start Year", min_value=2015, max_value=2050, step=1, value=2015,
-                    key="start_date_input"
                 )
             with date_col2:
                 end_date = st.number_input(

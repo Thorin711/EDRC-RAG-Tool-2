@@ -590,7 +590,6 @@ def main():
             with date_col2:
                 end_date = st.number_input(
                     "End Year", min_value=2015, max_value=2050, step=1, value=2015,
-                    key="end_date_input"
                 )
             with date_col3:
                 use_date_filter = st.checkbox(

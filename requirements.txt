@@ -4,6 +4,7 @@ langchain-huggingface
 langchain-community
 openai
 sentence-transformers
+transformers
 tiktoken
 langchain-core
 langchain-text-splitters

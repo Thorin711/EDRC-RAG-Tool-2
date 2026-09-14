@@ -13,9 +13,25 @@ import time
 from bs4 import BeautifulSoup
 import unicodedata
 
-from langchain_text_splitters import MarkdownHeaderTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
-from common import get_secret, get_qdrant_url, load_embedding_model, load_store, make_doc_id, DB_OPTIONS
+from common import (
+    get_secret,
+    get_qdrant_url,
+    load_embedding_model,
+    load_embedding_tokenizer,
+    load_store,
+    make_doc_id,
+    EMBEDDING_MODEL_NAME,
+    EMBEDDING_MAX_TOKENS,
+    DB_OPTIONS,
+)
+
+# Leave headroom under the model's real limit for the BOS/EOS tokens the
+# tokenizer adds and for small counting differences vs. the embedding call.
+CHUNK_TOKEN_SIZE = EMBEDDING_MAX_TOKENS - 60
+CHUNK_TOKEN_OVERLAP = 60
 
 GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 REQUEST_TIMEOUT = 180
@@ -159,7 +175,14 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
 
 def chunk_document(markdown_content, doc_metadata):
     """
-    Splits the markdown document based on headers and applies metadata.
+    Splits the markdown document based on headers, then further splits any
+    section that's still too long for the embedding model to see in full.
+
+    BAAI/bge-large-en-v1.5 has a 512-token context window: a section-sized
+    chunk (the header split alone) routinely runs to several thousand
+    tokens, so everything past the limit was previously truncated and never
+    actually embedded. The second pass below re-splits on the SAME tokenizer
+    the embedding model uses, so a chunk's token count is guaranteed to fit.
     """
     headers_to_split_on = [
         ("#", "Header 1"),
@@ -168,18 +191,34 @@ def chunk_document(markdown_content, doc_metadata):
         ("####", "Header 4"),
     ]
     markdown_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=headers_to_split_on, 
+        headers_to_split_on=headers_to_split_on,
         return_each_line=False
     )
-    
-    # Split the content
-    chunks = markdown_splitter.split_text(markdown_content)
-    
+
+    # Pass 1: split on markdown headers, so section/heading metadata survives.
+    header_chunks = markdown_splitter.split_text(markdown_content)
+
+    # Pass 2: re-split any section that's still too long for the embedding
+    # model's context window, using its own tokenizer as the length function.
+    tokenizer = load_embedding_tokenizer()
+    token_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
+        tokenizer,
+        chunk_size=CHUNK_TOKEN_SIZE,
+        chunk_overlap=CHUNK_TOKEN_OVERLAP,
+    )
+
+    chunks = []
+    for header_chunk in header_chunks:
+        sub_texts = token_splitter.split_text(header_chunk.page_content)
+        for sub_text in sub_texts:
+            sub_chunk = Document(page_content=sub_text, metadata=dict(header_chunk.metadata))
+            chunks.append(sub_chunk)
+
     # Apply the base document metadata to all chunks
     for chunk in chunks:
         chunk.metadata.update(doc_metadata)
-        
-    st.write(f"Document split into {len(chunks)} chunks.")
+
+    st.write(f"Document split into {len(chunks)} chunks (header split -> {EMBEDDING_MODEL_NAME} token-limited split).")
     return chunks
 
 def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
@@ -312,8 +351,19 @@ def main():
         final_yaml_str += f'year: "{safe_year}"\n'
         final_yaml_str += "---\n\n"
         
+        # NOT what gets embedded (see the chunk_document() call below) --
+        # this is just the reviewed markdown + YAML front-matter, offered
+        # below as a download.
         final_markdown_for_download = final_yaml_str + edited_body
-        
+
+        st.download_button(
+            "⬇️ Download reviewed Markdown",
+            data=final_markdown_for_download,
+            file_name=dl_filename,
+            mime="text/markdown",
+            key=f"download_{unique_key}",
+        )
+
         if st.button(
             "Confirm & Upload to Vector DB", 
             type="primary", 
@@ -349,7 +399,10 @@ def main():
                             st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
                             pass
 
-                        chunks = chunk_document(final_markdown_for_download, doc_metadata)
+                        # Chunk the reviewed body only -- NOT final_markdown_for_download,
+                        # whose YAML front-matter (title/authors/doi/year) would otherwise
+                        # land inside chunk 1's embedded text.
+                        chunks = chunk_document(edited_body, doc_metadata)
                         
                         st.write(f"Document chunked. Starting uploads...")
                         

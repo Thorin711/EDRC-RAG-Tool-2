@@ -492,22 +492,27 @@ def main():
                 query_to_use = edited_query
                 with st.spinner(f"Searching `{db_choice_label}` with final query..."):
                     try:
-                        search_kwargs = {"k": k_results}
+                        # When reranking, retrieve a wider candidate pool than
+                        # k_results -- reranking the same k results back down
+                        # to k only reorders them, it can never promote a
+                        # relevant document the initial vector search missed.
+                        retrieval_k = min(k_results * 4, 100) if use_reranker else k_results
+                        search_kwargs = {"k": retrieval_k}
 
                         if use_date_filter:
                             search_kwargs["filter"] = Filter(
                                 must=[
                                     FieldCondition(
-                                        key="metadata.year", 
+                                        key="metadata.year",
                                         range=Range(gte=start_date, lte=end_date)
                                     )
                                 ]
                             )
 
                         initial_results = vector_store.similarity_search(query_to_use, **search_kwargs)
-                        
+
                         if use_reranker:
-                            with st.spinner("Re-ranking results..."):
+                            with st.spinner("Re-ranking results... (first use downloads the BGE reranker model, which can take a minute)"):
                                 reranker_model = load_reranker_model()
                                 reranked = rerank_results(query_to_use, initial_results, reranker_model, top_k=k_results)
                                 st.session_state.search_results = reranked

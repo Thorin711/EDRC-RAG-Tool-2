@@ -129,6 +129,19 @@ def load_embedding_model():
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 
+# BAAI/bge-large-en-v1.5's actual context window. Chunks must fit under this
+# in *tokens* (not characters) or the embedding model silently truncates them
+# -- the tail of the chunk is never actually embedded/searchable.
+EMBEDDING_MAX_TOKENS = 512
+
+
+@st.cache_resource
+def load_embedding_tokenizer():
+    """Loads and caches the tokenizer that matches EMBEDDING_MODEL_NAME."""
+    from transformers import AutoTokenizer
+    return AutoTokenizer.from_pretrained(EMBEDDING_MODEL_NAME)
+
+
 @st.cache_resource
 def load_store(_embeddings, collection_name, _url, _api_key):
     """

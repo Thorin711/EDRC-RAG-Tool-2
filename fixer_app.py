@@ -1,10 +1,7 @@
 # metadata_fixer.py
 import streamlit as st
-import uuid
 from qdrant_client.http.models import (
-    PointStruct,
     FieldCondition,
-    MatchText,
     Filter,
     Range  # Import Range for date filtering
 )
@@ -14,9 +11,9 @@ from common import (
     get_qdrant_url,
     load_embedding_model,
     load_store,
+    build_exact_document_filter,
+    scroll_all,
     COLLECTION_FULL,
-    COLLECTION_JOURNAL,
-    COLLECTION_EDRC,
     ALL_COLLECTIONS,
 )
 
@@ -152,29 +149,27 @@ def fixer_app():
                                 }
                             }
 
+                            # Exact match on doc_id (or, for documents
+                            # uploaded before doc_id existed, on the
+                            # ORIGINAL title) -- never a substring match, so
+                            # this can't sweep in a different document with
+                            # a similar title.
+                            exact_filter = build_exact_document_filter(current_meta)
+
                             with st.spinner(f"Saving changes for '{original_title}'..."):
                                 try:
                                     total_chunks_updated = 0
-                                    
+
                                     for collection_name in collections_found_in:
-                                        # Find all points in this collection matching the ORIGINAL title
-                                        title_filter = Filter(
-                                            must=[
-                                                FieldCondition(
-                                                    key="metadata.title",
-                                                    match=MatchText(text=original_title) # Find by old title
-                                                )
-                                            ]
+                                        points_to_update = scroll_all(
+                                            qdrant_client,
+                                            collection_name,
+                                            exact_filter,
+                                            with_payload=False,
                                         )
-                                        points_to_update, _ = qdrant_client.scroll(
-                                            collection_name=collection_name,
-                                            scroll_filter=title_filter,
-                                            limit=500,
-                                            with_payload=False
-                                        )
-                                        
+
                                         point_ids = [point.id for point in points_to_update]
-                                        
+
                                         if not point_ids:
                                             st.write(f"ℹ️ No matching chunks found in `{collection_name}`. Skipping.")
                                             continue

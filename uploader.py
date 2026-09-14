@@ -13,10 +13,9 @@ import time
 from bs4 import BeautifulSoup
 import unicodedata
 
-from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
-from common import get_secret, get_qdrant_url, load_embedding_model, load_store, DB_OPTIONS
+from common import get_secret, get_qdrant_url, load_embedding_model, load_store, make_doc_id, DB_OPTIONS
 
 GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 REQUEST_TIMEOUT = 180
@@ -340,7 +339,8 @@ def main():
                             "title": edited_title,
                             "authors": authors_string,
                             "doi": edited_doi,
-                            "source": uploaded_file.name
+                            "source": uploaded_file.name,
+                            "doc_id": make_doc_id(edited_title, uploaded_file.name),
                         }
                         
                         try:

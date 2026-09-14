@@ -78,7 +78,7 @@ Needs these imports back in app.py: `import collections`, `import pandas as pd`,
 
             except Exception as e:
                 st.error(f"An error occurred during the author search: {e}")
-
+"""
 
 # --------------------------------------------------------------------------------
 # FEATURE 2: "Query Analyzer" tab

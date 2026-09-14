@@ -38,8 +38,6 @@ from common import (
     load_store,
     DB_OPTIONS,
     COLLECTION_FULL,
-    COLLECTION_JOURNAL,
-    COLLECTION_EDRC,
     SCOPES,
     REPORT_SHEET_NAME,
     MODEL_COSTS,

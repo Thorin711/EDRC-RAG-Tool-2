@@ -31,10 +31,6 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
 from sentence_transformers import CrossEncoder
-import collections  # Added for counting authors
-import pandas as pd  # Added for displaying author results
-import altair as alt # Added for custom bar chart
-import json         # Added for parsing LLM-generated question lists
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -138,11 +134,11 @@ def count_tokens(text: str, model: str = "gpt-5-nano") -> int:
     """Counts the number of tokens in a text string for a given model."""
     try:
         encoding = tiktoken.encoding_for_model(model)
-        return len(encoding.encode(text))
     except KeyError:
-        st.warning(f"Tokenizer for model '{model}' not found. Using 'cl100k_base' as a fallback.")
-        encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
+        # tiktoken doesn't yet know newer model names (e.g. gpt-5-*); this is an
+        # expected fallback, not a problem worth surfacing to the user.
+        encoding = tiktoken.get_encoding("o200k_base")
+    return len(encoding.encode(text))
 
 
 def display_token_usage(token_info, model_name, title):
@@ -165,6 +161,12 @@ def display_token_usage(token_info, model_name, title):
         st.markdown(f"- **Estimated Cost:** `${cost:.6f}` (Model: `{model_name}`)")
         st.markdown(f"- **Estimated CO2:** `{co2:.2f} g`")
 
+@st.cache_resource
+def get_gspread_client():
+    """Builds and caches the authorized gspread client for the service account."""
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPES)
+    return gspread.authorize(creds)
+
 def submit_report_to_sheets(doc_metadata, chunk_content, reason):
     """Submits a data quality report to a Google Sheet."""
     try:
@@ -174,9 +176,7 @@ def submit_report_to_sheets(doc_metadata, chunk_content, reason):
             st.error("Google Cloud credentials not found in Streamlit secrets.")
             return False
 
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPES)
-        client = gspread.authorize(creds)
-        
+        client = get_gspread_client()
         sheet = client.open(REPORT_SHEET_NAME).sheet1
         
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -202,11 +202,9 @@ def log_usage_stats(user_query, collection_name, results_count, enhanced_mode, s
     """Logs anonymous usage stats to the 'Usage Logs' sheet."""
     try:
         if "gcp_service_account" not in st.secrets:
-            return 
+            return
 
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPES)
-        client = gspread.authorize(creds)
-        
+        client = get_gspread_client()
         sheet = client.open(REPORT_SHEET_NAME).worksheet("Usage Logs")
         
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -259,66 +257,6 @@ def improve_query_with_llm(user_query):
     except Exception as e:
         st.warning(f"Could not improve query due to an API error: {e}. Using the original query.")
         return user_query, None
-
-
-def extract_questions_with_llm(consultation_text):
-    """Uses an LLM to extract a list of questions from a block of text."""
-    try:
-        prompt = f"""
-        You are a text-processing bot. Your task is to read the following text and extract a list of all explicit and implicit questions.
-        - Ignore headings, numbering, and introductory text.
-        - Focus only on the questions themselves.
-        - Return *only* a valid JSON list of strings. Do not include any preamble, markdown, or other text.
-        
-        Example output:
-        ["What is the national vision?", "Why do you disagree?", "How can ATE support local authorities?"]
-        
-        --- Text to Analyze ---
-        {consultation_text}
-        """
-        
-        # Fix: Fetch key using get_secret
-        openai.api_key = get_secret("OPENAI_API_KEY")
-
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a text-processing bot that returns only valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-            max_tokens=1000,
-            response_format={"type": "json_object"} 
-        )
-        
-        response_text = response.choices[0].message.content.strip()
-        
-        usage = response.usage
-        token_info = {
-            "input_tokens": usage.prompt_tokens,
-            "output_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        }
-        
-        try:
-            data = json.loads(response_text)
-            if isinstance(data, list):
-                return data, token_info
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    if isinstance(value, list):
-                        return value, token_info 
-            
-            st.error(f"LLM returned valid JSON, but not in the expected format: {response_text}")
-            return None, token_info 
-
-        except json.JSONDecodeError:
-            st.error(f"Failed to decode JSON from LLM response: {response_text}")
-            return None, token_info 
-        
-    except Exception as e:
-        st.warning(f"Could not extract questions due to an API error: {e}.")
-        return None, None
 
 
 def summarize_results_with_llm(user_query, _search_results, model="gpt-5-nano", max_completion_tokens=10000):
@@ -498,8 +436,7 @@ def main():
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()
 
-    # --- Create Tabs ---
-    tab1, tab2, tab3 = st.tabs(["📚 Document Search", "🧑‍🔬 Author Explorer", "🔎 Query Analyzer"])
+    (tab1,) = st.tabs(["📚 Document Search"])
 
     with tab1:
         # --- Database Selection ---
@@ -585,11 +522,13 @@ def main():
             date_col1, date_col2, date_col3 = st.columns([2, 2, 6])
             with date_col1:
                 start_date = st.number_input(
-                    "Start Year", min_value=2015, max_value=2050, step=1, value=2015,
+                    "Start Year", min_value=1900, max_value=2050, step=1,
+                    key="start_date_input",
                 )
             with date_col2:
                 end_date = st.number_input(
-                    "End Year", min_value=2015, max_value=2050, step=1, value=2015,
+                    "End Year", min_value=1900, max_value=2050, step=1,
+                    key="end_date_input",
                 )
             with date_col3:
                 use_date_filter = st.checkbox(
@@ -610,7 +549,7 @@ def main():
             if use_enhanced_search and api_key_present:
                 with st.spinner("Improving query..."):
                     # Use get_secret implicitly inside the function or set it here
-                    openai.api_key = get_secret("OPENAI_API_KEY") 
+                    openai.api_key = get_secret("OPENAI_API_KEY")
                     improved_query, token_info = improve_query_with_llm(user_query)
 
                     if token_info:
@@ -618,7 +557,9 @@ def main():
                         st.session_state.final_query = improved_query if improved_query else user_query
                     elif not st.session_state.final_query:
                         st.session_state.final_query = user_query
-        run_final_search = False 
+            else:
+                st.session_state.final_query = user_query
+        run_final_search = False
 
         if st.session_state.final_query and not st.session_state.search_results:
             with st.form("final_search_form"):
@@ -730,10 +671,7 @@ def main():
                         doi = meta.get('doi', '')
                         
                         source_path = meta.get('source', 'Unknown Source')
-                        base_name = source_path.split("\\")[-1]
-                        source = base_name.split('.')[0]
-                        if len(source) <= 4:
-                            source = base_name[:-3]
+                        source = os.path.splitext(os.path.basename(source_path))[0]
 
                         st.markdown(f"### {i+1}. {title}")
                         st.markdown(f"**Authors:** {authors}")
@@ -765,156 +703,8 @@ def main():
                             with st.expander(f"📄 Snippet {j+1}: {header_label}"):
                                 st.write(chunk.page_content)
 
-    # with tab2:
-        # st.subheader("Find Top Authors by Subject")
-        # st.info("This tool searches the **Full Database** to find authors who have published most frequently on a given subject.")
-        
-        # with st.form("author_search_form"):
-            # author_query = st.text_input(
-                # "Search Subject:", 
-                # placeholder="e.g., carbon capture"
-            # )
-            # author_search_submitted = st.form_submit_button("Find Authors", type="primary", use_container_width=True)
-
-        # if author_search_submitted and author_query:
-            # DOC_SCAN_K = 1000
-            # with st.spinner(f"Searching Full Database for authors on '{author_query}' (scanning top {DOC_SCAN_K} docs)..."):
-                # try:
-                    # # Pass the secure URL/KEY here too
-                    # full_author_store = load_full_store(embeddings, qdrant_url, qdrant_api_key)
-                    
-                    # search_results = full_author_store.similarity_search(
-                        # author_query, 
-                        # k=DOC_SCAN_K
-                    # )
-                    
-                    # if not search_results:
-                        # st.warning("No documents found for this subject.")
-                    # else:
-                        # author_counts = collections.Counter()
-                        # grouped_docs = group_results(search_results)
-                        
-                        # for group in grouped_docs:
-                            # meta = group['metadata']
-                            # authors_string = meta.get('authors', 'No Authors Found')
-                            
-                            # if authors_string != 'No Authors Found' and authors_string is not None:
-                                # individual_authors = [
-                                    # name.strip() for name in authors_string.split(',')
-                                    # if name.strip() and name.strip().lower() not in ['not available', 'n/a']
-                                # ]
-                                # author_counts.update(individual_authors)
-                                
-                        # if not author_counts:
-                            # st.info("Documents were found, but no author information was attached to them.")
-                        # else:
-                            # top_10_authors = author_counts.most_common(10)
-                            
-                            # st.subheader(f"Top 10 Authors on '{author_query}'")
-                            # st.write(f"(From {len(grouped_docs)} unique documents found in the top {DOC_SCAN_K} relevant docs)")
-                            
-                            # df = pd.DataFrame(top_10_authors, columns=["Author", "Relevant Publications Found"])
-                            
-                            # max_val = df["Relevant Publications Found"].max()
-                            # ylim_top = (max_val // 5 + 1) * 5
-
-                            # chart = alt.Chart(df).mark_bar().encode(
-                                # x=alt.X('Author', sort=None, axis=alt.Axis(labelAngle=0)),
-                                # y=alt.Y('Relevant Publications Found', scale=alt.Scale(domain=[0, ylim_top])),
-                                # tooltip=['Author', 'Relevant Publications Found']
-                            # ).interactive()
-
-                            # st.altair_chart(chart, use_container_width=True)
-
-                # except Exception as e:
-                    # st.error(f"An error occurred during the author search: {e}")
-
-    # with tab3:
-        # st.subheader("Query Relevance Analyzer")
-        # st.info("Paste in a consultation or text, and this tool will extract the questions and check if the **Full Database** has relevant answers.")
-        
-        # if not api_key_present:
-            # st.warning("`OPENAI_API_KEY` not found in secrets. This feature requires an API key to extract questions.", icon="⚠️")
-        
-        # with st.form("query_analyzer_form"):
-            # consultation_text = st.text_area(
-                # "Paste Consultation Text Here:",
-                # placeholder="Paste your full consultation text... e.g., 'Question 1: Do you agree...?'",
-                # height=300
-            # )
-            # relevance_threshold = st.slider(
-                # "Relevance Threshold (Reranker Score):",
-                # min_value=-5.0, max_value=5.0, value=1.0, step=0.5,
-                # help="The minimum score from the reranker model to be considered 'Relevant'. A good starting point is 1.0."
-            # )
-            # analyze_submitted = st.form_submit_button("Analyze Questions", type="primary", use_container_width=True, disabled=not api_key_present)
-        
-        # if analyze_submitted and consultation_text:
-            # extracted_questions = None
-            # extraction_token_info = None 
-            
-            # with st.spinner("Step 1/2: Extracting questions from text..."):
-                # openai.api_key = get_secret("OPENAI_API_KEY") 
-                # extracted_questions, extraction_token_info = extract_questions_with_llm(consultation_text)
-
-            # if extraction_token_info:
-                # display_token_usage(extraction_token_info, "gpt-4o-mini", "Question Extraction")
-
-            # if extracted_questions:
-                # st.write(f"Found {len(extracted_questions)} questions. Now analyzing relevance against the **Full Database**...")
-                
-                # with st.spinner(f"Step 2/2: Analyzing {len(extracted_questions)} questions... This may take a moment."):
-                    # try:
-                        # reranker_model = load_reranker_model()
-                        # # Use secure keys
-                        # full_store = load_full_store(embeddings, qdrant_url, qdrant_api_key)
-                        
-                        # analysis_results = []
-                        # progress_bar = st.progress(0, text="Analyzing...")
-
-                        # for i, question in enumerate(extracted_questions):
-                            # initial_results = full_store.similarity_search(question, k=10)
-                            
-                            # top_score = -10.0 
-                            
-                            # if initial_results:
-                                # reranker_pairs = [(question, d.page_content) for d in initial_results]
-                                # reranker_scores = reranker_model.predict(reranker_pairs)
-                                # top_score = max(reranker_scores)
-                            
-                            # is_relevant = top_score > relevance_threshold
-                            # analysis_results.append({
-                                # "question": question,
-                                # "top_score": top_score,
-                                # "is_relevant": is_relevant
-                            # })
-                            # progress_bar.progress((i + 1) / len(extracted_questions), text=f"Analyzing question {i+1}/{len(extracted_questions)}")
-                        
-                        # progress_bar.empty()
-                        # st.subheader("Analysis Complete")
-                        
-                        # for result in analysis_results:
-                            # with st.container(border=True):
-                                # st.markdown(f"**Question:** {result['question']}")
-                                
-                                # col1, col2 = st.columns(2)
-                                # with col1:
-                                    # st.metric(label="Top Relevance Score", value=f"{result['top_score']:.2f}")
-                                # with col2:
-                                    # if result['is_relevant']:
-                                        # st.success("✅ Relevant")
-                                    # else:
-                                        # st.error("❌ Not Relevant")
-
-                    # except Exception as e:
-                        # st.error(f"An error occurred during relevance analysis: {e}")
-
-            # elif extracted_questions is None:
-                # pass
-            # else:
-                # st.info("No questions were found in the provided text.")
     st.markdown("---")
-    st.caption("🔒 Anonymous usage statistics are collected to help improve this tool. No personal data or IP addresses are stored.")
+    st.caption("🔒 Usage statistics (your search query and result count) are logged to help improve this tool. No IP addresses or account information are stored.")
 
 if __name__ == "__main__":
     main()

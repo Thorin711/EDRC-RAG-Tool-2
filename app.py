@@ -29,7 +29,6 @@ import openai
 import tiktoken
 from sentence_transformers import CrossEncoder
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
 from common import (
     get_secret,
@@ -89,8 +88,7 @@ def display_token_usage(token_info, model_name, title):
 @st.cache_resource
 def get_gspread_client():
     """Builds and caches the authorized gspread client for the service account."""
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], SCOPES)
-    return gspread.authorize(creds)
+    return gspread.service_account_from_dict(st.secrets["gcp_service_account"], scopes=SCOPES)
 
 def submit_report_to_sheets(doc_metadata, chunk_content, reason):
     """Submits a data quality report to a Google Sheet."""

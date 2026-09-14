@@ -15,6 +15,7 @@ import unicodedata
 
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from qdrant_client import QdrantClient
 
 from common import (
     get_secret,
@@ -23,6 +24,7 @@ from common import (
     load_embedding_tokenizer,
     load_store,
     make_doc_id,
+    build_exact_document_filter,
     EMBEDDING_MODEL_NAME,
     EMBEDDING_MAX_TOKENS,
     DB_OPTIONS,
@@ -364,9 +366,18 @@ def main():
             key=f"download_{unique_key}",
         )
 
+        replace_existing = st.checkbox(
+            "Replace existing chunks if this document was already uploaded",
+            value=False,
+            key=f"replace_{unique_key}",
+            help="Matched by doc_id (title + source filename). If left unchecked and a "
+                 "match is found in a selected collection, the upload is blocked instead "
+                 "of silently creating duplicate chunks.",
+        )
+
         if st.button(
-            "Confirm & Upload to Vector DB", 
-            type="primary", 
+            "Confirm & Upload to Vector DB",
+            type="primary",
             key=f"upload_{unique_key}",
             use_container_width=True
         ):
@@ -399,13 +410,40 @@ def main():
                             st.warning(f"Year '{edited_year}' is not a valid integer. Skipping 'year' metadata.")
                             pass
 
+                        # Duplicate-upload guard: a document with no prior guard could be
+                        # re-uploaded indefinitely, silently piling up duplicate chunks
+                        # (same doc_id, different point ids -- nothing else in the app
+                        # would ever notice). Check each target collection before
+                        # embedding anything.
+                        doc_filter = build_exact_document_filter(doc_metadata)
+                        client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key, prefer_grpc=False)
+                        collections_with_existing = [
+                            collection_name
+                            for collection_name in selected_collection_names
+                            if client.count(collection_name, count_filter=doc_filter, exact=True).count > 0
+                        ]
+
+                        if collections_with_existing and not replace_existing:
+                            st.error(
+                                f"'{edited_title}' already has chunks in: "
+                                f"{', '.join(collections_with_existing)}. Check "
+                                f"\"Replace existing chunks\" above to overwrite them, or "
+                                f"cancel if this is not intended."
+                            )
+                            st.stop()
+
+                        if collections_with_existing:
+                            for collection_name in collections_with_existing:
+                                st.write(f"Removing existing chunks from `{collection_name}` before re-upload...")
+                                client.delete(collection_name=collection_name, points_selector=doc_filter)
+
                         # Chunk the reviewed body only -- NOT final_markdown_for_download,
                         # whose YAML front-matter (title/authors/doi/year) would otherwise
                         # land inside chunk 1's embedded text.
                         chunks = chunk_document(edited_body, doc_metadata)
-                        
+
                         st.write(f"Document chunked. Starting uploads...")
-                        
+
                         for collection_name in selected_collection_names:
                             st.write(f"Uploading to collection: `{collection_name}`")
                             upload_chunks(

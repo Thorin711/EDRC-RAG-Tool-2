@@ -1,15 +1,17 @@
-streamlit
-langchain-core
-langchain-text-splitters
-langchain-huggingface
-langchain-qdrant>=0.1.0
-qdrant-client>=1.9.0
-sentence-transformers
-transformers
-openai
-tiktoken
-beautifulsoup4
-lxml
-requests
-gspread
-oauth2client
+streamlit==1.63.0
+langchain-core==1.6.3
+langchain-text-splitters==1.1.2
+langchain-huggingface==1.2.2
+langchain-qdrant==1.1.0
+# Keep in step with the Qdrant Cloud server version (1.19.1) -- pin the minor,
+# not an exact patch, so routine client patch releases don't need a bump here.
+qdrant-client>=1.19.0,<1.20.0
+sentence-transformers==6.0.1
+transformers==5.17.0
+openai==3.13.0
+tiktoken==0.14.0
+beautifulsoup4==4.15.0
+lxml==6.1.3
+requests==2.34.2
+gspread==6.2.1
+google-auth==2.58.0

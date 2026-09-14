@@ -1,0 +1,5 @@
+line-length = 120
+extend-exclude = ["backups", "tools", ".venv-hpc", "future_features.py"]
+
+[lint]
+select = ["E", "F", "I"]

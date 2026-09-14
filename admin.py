@@ -1,62 +1,23 @@
 import streamlit as st
 import uuid
 from qdrant_client.http.models import (
-    PointStruct, 
-    FieldCondition, 
-    MatchText, 
+    PointStruct,
+    FieldCondition,
+    MatchText,
     Filter
 )
 
-from langchain_qdrant import Qdrant
-from langchain_huggingface import HuggingFaceEmbeddings
-
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io"
-COLLECTION_FULL = "full_papers"
-COLLECTION_JOURNAL = "journal_papers"
-COLLECTION_EDRC = "edrc_papers"
-
-ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
-
-@st.cache_resource
-def load_embedding_model():
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-@st.cache_resource
-def load_full_store(_embeddings, _url, _api_key):
-    """Loads and caches the FULL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_FULL,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_journal_store(_embeddings, _url, _api_key):
-    """Loads and caches the JOURNAL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_JOURNAL,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_edrc_store(_embeddings, _url, _api_key):
-    """Loads and caches the EDRC vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_EDRC,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
+from common import (
+    get_secret,
+    get_qdrant_url,
+    load_embedding_model,
+    load_store,
+    COLLECTION_FULL,
+    COLLECTION_JOURNAL,
+    COLLECTION_EDRC,
+    ALL_COLLECTIONS,
+    DB_OPTIONS,
+)
 
 def admin_app():
     st.set_page_config(page_title="Admin Panel", page_icon="🔑", layout="wide")
@@ -69,18 +30,14 @@ def admin_app():
     if "selected_collection" not in st.session_state:
         st.session_state.selected_collection = COLLECTION_EDRC
 
-    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
+    qdrant_api_key = get_secret("QDRANT_API_KEY")
+    qdrant_url = get_qdrant_url()
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
+        st.error("`QDRANT_API_KEY` not found in secrets (Streamlit or Env). App cannot connect.")
         st.stop()
 
     st.header("1. Select Database")
-    DB_OPTIONS = {
-        "Full Database": COLLECTION_FULL,
-        "Journal Articles Only": COLLECTION_JOURNAL,
-        "EDRC Only": COLLECTION_EDRC,
-    }
-    
+
     current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
     
     db_choice = st.radio(
@@ -100,14 +57,7 @@ def admin_app():
 
     try:
         embeddings = load_embedding_model()
-        
-        if selected_collection_name == COLLECTION_FULL:
-            vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
-        elif selected_collection_name == COLLECTION_JOURNAL:
-            vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
-        else:
-            vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
-            
+        vector_store = load_store(embeddings, selected_collection_name, qdrant_url, qdrant_api_key)
         qdrant_client = vector_store.client
         st.info(f"Connected to collection: **{selected_collection_name}**")
     except Exception as e:

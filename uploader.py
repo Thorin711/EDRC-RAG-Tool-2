@@ -15,24 +15,13 @@ import unicodedata
 
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_qdrant import Qdrant
-import qdrant_client
+
+from common import get_secret, get_qdrant_url, load_embedding_model, load_store, DB_OPTIONS
 
 GROBID_API_URL = "https://thorin711-edrc-grobid.hf.space/api/processFulltextDocument"
 REQUEST_TIMEOUT = 180
 MAX_RETRIES = 2
 RETRY_DELAY = 5
-
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-
-QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io" 
-
-DB_OPTIONS = {
-    "Full Database": "full_papers",
-    "Journal Articles Only": "journal_papers",
-    "EDRC Only": "edrc_papers",
-}
 
 
 def sanitize_filename(filename):
@@ -169,14 +158,6 @@ def parse_xml_to_markdown(xml_content, filename_for_download):
         st.exception(e)
         return None, None, None, None, None, f"Error parsing XML: {e}"
 
-@st.cache_resource
-def load_embedding_model():
-    """Loads and caches the embedding model."""
-    st.write(f"Loading embedding model: {EMBEDDING_MODEL_NAME}...")
-    model = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-    st.write("Embedding model loaded.")
-    return model
-
 def chunk_document(markdown_content, doc_metadata):
     """
     Splits the markdown document based on headers and applies metadata.
@@ -211,17 +192,10 @@ def upload_chunks(chunks, embedding_model, url, api_key, collection_name):
         return
 
     st.write(f"Uploading {len(chunks)} chunks to Qdrant collection: '{collection_name}'...")
-    
-    # This will add to the collection. 
-    Qdrant.from_documents(
-        documents=chunks,
-        embedding=embedding_model,
-        url=url,
-        api_key=api_key,
-        collection_name=collection_name,
-        prefer_grpc=True,
-        force_recreate=False 
-    )
+
+    # Adds to the existing collection (does not recreate it).
+    vector_store = load_store(embedding_model, collection_name, url, api_key)
+    vector_store.add_documents(chunks)
     st.success(f"Upload to '{collection_name}' complete!")
 
 def main():
@@ -229,13 +203,10 @@ def main():
     st.title("PDF to Vector DB Uploader")
     st.markdown("Extract, review, and upload academic papers directly to your Qdrant database.")
 
-    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
+    qdrant_api_key = get_secret("QDRANT_API_KEY")
+    qdrant_url = get_qdrant_url()
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot upload.", icon=":(")
-        st.stop()
-        
-    if QDRANT_URL == "https://YOUR-QDRANT-CLOUD-URL.com":
-        st.error("Please update the `QDRANT_URL` variable in the script.", icon="圷")
+        st.error("`QDRANT_API_KEY` not found in secrets (Streamlit or Env). App cannot upload.", icon=":(")
         st.stop()
 
     try:
@@ -387,7 +358,7 @@ def main():
                             upload_chunks(
                                 chunks=chunks,
                                 embedding_model=embeddings,
-                                url=QDRANT_URL,
+                                url=qdrant_url,
                                 api_key=qdrant_api_key,
                                 collection_name=collection_name
                             )

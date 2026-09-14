@@ -24,32 +24,26 @@ features.
 import streamlit as st
 import os
 import datetime
-from langchain_qdrant import QdrantVectorStore 
-from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition, Range
-from langchain_huggingface import HuggingFaceEmbeddings
 import openai
 import tiktoken
 from sentence_transformers import CrossEncoder
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- UNIVERSAL SECRET GETTER ---
-def get_secret(key):
-    """
-    Retrieves a secret from environment variables (Hugging Face) 
-    or Streamlit secrets (Local/Streamlit Cloud).
-    """
-    # 1. Try Environment Variable (Hugging Face / Docker)
-    if key in os.environ:
-        return os.environ[key]
-    
-    # 2. Try Streamlit Secrets (Local .toml)
-    try:
-        return st.secrets[key]
-    except (FileNotFoundError, KeyError):
-        return None
-# -------------------------------
+from common import (
+    get_secret,
+    get_qdrant_url,
+    load_embedding_model,
+    load_store,
+    DB_OPTIONS,
+    COLLECTION_FULL,
+    COLLECTION_JOURNAL,
+    COLLECTION_EDRC,
+    SCOPES,
+    REPORT_SHEET_NAME,
+    MODEL_COSTS,
+)
 
 @st.cache_resource
 def load_reranker_model():
@@ -61,73 +55,6 @@ def rerank_results(query, docs, reranker_model, top_k=10):
     reranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
     reranked_docs = [doc for doc, _ in reranked[:top_k]]
     return reranked_docs
-
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-
-COLLECTION_FULL = "full_papers" 
-COLLECTION_JOURNAL = "journal_papers" 
-COLLECTION_EDRC = "edrc_papers"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-REPORT_SHEET_NAME = "RAG Data Reports" 
-MODEL_COSTS = {
-    "gpt-5-nano": {"input": 0.05, "output": 0.40},
-    "gpt-5-mini": {"input": 0.25, "output": 2.00},
-    "gpt-5": {"input": 1.25, "output": 10.00},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60}
-}
-
-@st.cache_resource
-def load_embedding_model():
-    """Loads and caches the sentence embedding model from Hugging Face."""
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-@st.cache_resource
-def load_full_store(_embeddings, _url, _api_key):
-    """Loads and caches the FULL vector store with explicit client creation."""
-    client = QdrantClient(
-        url=_url, 
-        api_key=_api_key,
-        prefer_grpc=False 
-    )
-    return QdrantVectorStore(
-        client=client,
-        collection_name=COLLECTION_FULL,
-        embedding=_embeddings,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_journal_store(_embeddings, _url, _api_key):
-    """Loads and caches the JOURNAL vector store."""
-    client = QdrantClient(
-        url=_url, 
-        api_key=_api_key,
-        prefer_grpc=False
-    )
-    return QdrantVectorStore(
-        client=client,
-        collection_name=COLLECTION_JOURNAL,
-        embedding=_embeddings,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_edrc_store(_embeddings, _url, _api_key):
-    """Loads and caches the EDRC vector store."""
-    client = QdrantClient(
-        url=_url, 
-        api_key=_api_key,
-        prefer_grpc=False
-    )
-    return QdrantVectorStore(
-        client=client,
-        collection_name=COLLECTION_EDRC,
-        embedding=_embeddings,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
 
 @st.cache_data
 def count_tokens(text: str, model: str = "gpt-5-nano") -> int:
@@ -396,42 +323,31 @@ def main():
     qdrant_api_key = get_secret("QDRANT_API_KEY")
     
     # Try to get URL from secret, otherwise use the hardcoded default
-    qdrant_url = get_secret("QDRANT_URL")
-    
+    qdrant_url = get_qdrant_url()
+
     api_key_present = bool(openai_api_key)
 
     if not openai_api_key:
         st.warning("`OPENAI_API_KEY` not found in secrets (Streamlit or Env). AI-powered features will be disabled.", icon="⚠️")
     if not qdrant_api_key:
         st.error("`QDRANT_API_KEY` not found in secrets (Streamlit or Env). App cannot connect to database.", icon="🚨")
-        st.stop()    
-        
-    DB_OPTIONS = {
-        "Full Database": COLLECTION_FULL,
-        "Journal Articles Only": COLLECTION_JOURNAL,
-        "EDRC Only": COLLECTION_EDRC,
-    }
-    
+        st.stop()
+
     # --- Load Models and Vector Store ---
     try:
         embeddings = load_embedding_model()
-        
+
         try:
             current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
         except ValueError:
-            current_collection_index = 0 
+            current_collection_index = 0
 
         db_choice_label = list(DB_OPTIONS.keys())[current_collection_index]
         selected_collection_name = st.session_state.selected_collection
-        
+
         # Use the securely fetched `qdrant_url` and `qdrant_api_key` here
-        if selected_collection_name == COLLECTION_FULL:
-            vector_store = load_full_store(embeddings, qdrant_url, qdrant_api_key)
-        elif selected_collection_name == COLLECTION_JOURNAL:
-            vector_store = load_journal_store(embeddings, qdrant_url, qdrant_api_key)
-        else:
-            vector_store = load_edrc_store(embeddings, qdrant_url, qdrant_api_key)
-        
+        vector_store = load_store(embeddings, selected_collection_name, qdrant_url, qdrant_api_key)
+
     except Exception as e:
         st.error(f"An error occurred while loading the models or database: {e}")
         st.stop()

@@ -1,62 +1,21 @@
 import streamlit as st
-import uuid
 from qdrant_client.http.models import (
-    PointStruct, 
-    FieldCondition, 
-    MatchText, 
+    FieldCondition,
+    MatchText,
     Filter
 )
 
-from langchain_qdrant import Qdrant
-from langchain_huggingface import HuggingFaceEmbeddings
-
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io"
-COLLECTION_FULL = "full_papers"
-COLLECTION_JOURNAL = "journal_papers"
-COLLECTION_EDRC = "edrc_papers"
-
-ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
-
-@st.cache_resource
-def load_embedding_model():
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-@st.cache_resource
-def load_full_store(_embeddings, _url, _api_key):
-    """Loads and caches the FULL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_FULL,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_journal_store(_embeddings, _url, _api_key):
-    """Loads and caches the JOURNAL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_JOURNAL,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
-
-@st.cache_resource
-def load_edrc_store(_embeddings, _url, _api_key):
-    """Loads and caches the EDRC vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_EDRC,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
+from common import (
+    get_secret,
+    get_qdrant_url,
+    load_embedding_model,
+    load_store,
+    build_exact_document_filter,
+    scroll_all,
+    COLLECTION_EDRC,
+    ALL_COLLECTIONS,
+    DB_OPTIONS,
+)
 
 def admin_app():
     st.set_page_config(page_title="Admin Panel", page_icon="🔑", layout="wide")
@@ -65,22 +24,20 @@ def admin_app():
     if "search_results" not in st.session_state:
         st.session_state.search_results = None
     if "selected_points" not in st.session_state:
-        st.session_state.selected_points = [] 
+        st.session_state.selected_points = []
     if "selected_collection" not in st.session_state:
         st.session_state.selected_collection = COLLECTION_EDRC
+    if "pending_delete" not in st.session_state:
+        st.session_state.pending_delete = None
 
-    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
+    qdrant_api_key = get_secret("QDRANT_API_KEY")
+    qdrant_url = get_qdrant_url()
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
+        st.error("`QDRANT_API_KEY` not found in secrets (Streamlit or Env). App cannot connect.")
         st.stop()
 
     st.header("1. Select Database")
-    DB_OPTIONS = {
-        "Full Database": COLLECTION_FULL,
-        "Journal Articles Only": COLLECTION_JOURNAL,
-        "EDRC Only": COLLECTION_EDRC,
-    }
-    
+
     current_collection_index = list(DB_OPTIONS.values()).index(st.session_state.selected_collection)
     
     db_choice = st.radio(
@@ -96,18 +53,12 @@ def admin_app():
         st.session_state.selected_collection = selected_collection_name
         st.session_state.search_results = None
         st.session_state.selected_points = []
+        st.session_state.pending_delete = None
         st.rerun()
 
     try:
         embeddings = load_embedding_model()
-        
-        if selected_collection_name == COLLECTION_FULL:
-            vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
-        elif selected_collection_name == COLLECTION_JOURNAL:
-            vector_store = load_journal_store(embeddings, QDRANT_URL, qdrant_api_key)
-        else:
-            vector_store = load_edrc_store(embeddings, QDRANT_URL, qdrant_api_key)
-            
+        vector_store = load_store(embeddings, selected_collection_name, qdrant_url, qdrant_api_key)
         qdrant_client = vector_store.client
         st.info(f"Connected to collection: **{selected_collection_name}**")
     except Exception as e:
@@ -120,6 +71,7 @@ def admin_app():
     if st.button("Find Documents"):
         st.session_state.search_results = None
         st.session_state.selected_points = []
+        st.session_state.pending_delete = None
 
         if search_query:
             with st.spinner("Searching by title..."):
@@ -211,36 +163,34 @@ def admin_app():
                         collections_to_update = [selected_collection_name]
                         st.info(f"Applying changes to {selected_collection_name} only...")
 
+                    # Exact match on doc_id (or, for documents uploaded before
+                    # doc_id existed, on the ORIGINAL title) -- never a
+                    # substring match, so this can't sweep in a different
+                    # document with a similar title.
+                    exact_filter = build_exact_document_filter(current_meta)
+
                     with st.spinner(f"Saving changes..."):
                         try:
                             total_chunks_updated = 0
-                            
+
                             for collection_name in collections_to_update:
-                                title_filter = Filter(
-                                    must=[
-                                        FieldCondition(
-                                            key="metadata.title",
-                                            match=MatchText(text=current_title)
-                                        )
-                                    ]
+                                points_to_update = scroll_all(
+                                    qdrant_client,
+                                    collection_name,
+                                    exact_filter,
+                                    with_payload=False,
                                 )
-                                points_to_update, _ = qdrant_client.scroll(
-                                    collection_name=collection_name,
-                                    scroll_filter=title_filter,
-                                    limit=500,
-                                    with_payload=False
-                                )
-                                
+
                                 point_ids = [point.id for point in points_to_update]
-                                
+
                                 if not point_ids:
                                     st.write(f"ℹ️ No document matching '{current_title}' found in `{collection_name}`. Skipping.")
                                     continue
-                                
+
                                 # Apply the new payload to the found IDs
                                 qdrant_client.set_payload(
                                     collection_name=collection_name,
-                                    points=point_ids,  
+                                    points=point_ids,
                                     payload=payload_to_merge, # Use new metadata
                                     wait=True
                                 )
@@ -253,6 +203,7 @@ def admin_app():
                             # Clear state to be ready for the next search
                             st.session_state.search_results = None
                             st.session_state.selected_points = []
+                            st.session_state.pending_delete = None
                             st.rerun() # Rerun to hide the form
 
                         except Exception as e:
@@ -262,29 +213,34 @@ def admin_app():
         with delete_tab:
             st.subheader("⛔ Danger Zone: Delete Document")
             st.warning(f"**WARNING:** You are about to permanently delete document chunks associated with this title. This action **cannot** be undone.")
-            
+
             st.markdown("---")
-            
+
+            # Unique key for the document currently selected in the UI, so a
+            # stale preview from a previous document can never be confirmed
+            # against this one.
+            doc_key = current_meta.get("doc_id") or current_title
+
             with st.form("delete_form"):
                 confirm_check = st.checkbox(f"I understand I am permanently deleting chunks for '{current_title}'.")
                 confirm_title = st.text_input(
-                    "To confirm, please type the *exact* title of the document:", 
+                    "To confirm, please type the *exact* title of the document:",
                     placeholder="Type title to confirm..."
                 )
-                
+
                 st.markdown("---")
-                
+
                 apply_all_delete = st.checkbox(
                     "Permanently delete from ALL collections (full_papers, journal_papers, edrc_papers)",
                     value=False,
                     help="If checked, this will delete all chunks matching this title from all three collections."
                 )
-                
+
                 st.markdown("---")
-                
+
                 submitted_delete = st.form_submit_button(
-                    "DELETE DOCUMENT (PERMANENTLY)", 
-                    type="primary", 
+                    "Preview Deletion",
+                    type="primary",
                     use_container_width=True
                 )
 
@@ -292,62 +248,90 @@ def admin_app():
                     is_confirmed = confirm_check and (confirm_title == current_title)
 
                     if is_confirmed:
-                        
-                        # Determine which collections to delete from
-                        if apply_all_delete:
-                            collections_to_delete_from = ALL_COLLECTIONS
-                            st.info("Deleting from ALL collections...")
-                        else:
-                            collections_to_delete_from = [selected_collection_name]
-                            st.info(f"Deleting from {selected_collection_name} only...")
+                        # Exact match on doc_id (or, for documents uploaded
+                        # before doc_id existed, on the ORIGINAL title) --
+                        # never a substring match, so this can't sweep in a
+                        # different document with a similar title.
+                        exact_filter = build_exact_document_filter(current_meta)
+                        collections_to_delete_from = ALL_COLLECTIONS if apply_all_delete else [selected_collection_name]
 
-                        with st.spinner(f"Deleting document chunks..."):
-                            try:
-                                total_chunks_deleted = 0
-                                
-                                # +++ LOOP THROUGH EACH COLLECTION +++
-                                for collection_name in collections_to_delete_from:
-                                    # Find the points in this collection by title
-                                    title_filter = Filter(
-                                        must=[
-                                            FieldCondition(
-                                                key="metadata.title",
-                                                match=MatchText(text=current_title)
-                                            )
-                                        ]
-                                    )
-                                    points_to_delete, _ = qdrant_client.scroll(
-                                        collection_name=collection_name,
-                                        scroll_filter=title_filter,
-                                        limit=500,
-                                        with_payload=False
-                                    )
-                                    
-                                    point_ids = [point.id for point in points_to_delete]
-                                    
-                                    if not point_ids:
-                                        st.write(f"ℹ️ No document matching '{current_title}' found in `{collection_name}`. Skipping.")
-                                        continue
+                        with st.spinner("Scanning for chunks to delete..."):
+                            preview = {}
+                            for collection_name in collections_to_delete_from:
+                                points = scroll_all(qdrant_client, collection_name, exact_filter, with_payload=True)
+                                if points:
+                                    preview[collection_name] = points
 
-                                    # Perform the delete
-                                    qdrant_client.delete(
-                                        collection_name=collection_name,
-                                        points_selector=point_ids
-                                    )
-                                    st.write(f"🗑️ Deleted {len(point_ids)} chunks from `{collection_name}`.")
-                                    total_chunks_deleted += len(point_ids)
-                                
-                                st.success(f"Successfully deleted a total of {total_chunks_deleted} chunks! 🗑️")
-                                
-                                # Clear state
-                                st.session_state.search_results = None
-                                st.session_state.selected_points = []
-                                st.rerun()
-
-                            except Exception as e:
-                                st.error(f"An error occurred during deletion: {e}")
+                        st.session_state.pending_delete = {"doc_key": doc_key, "preview": preview}
+                        st.rerun()
                     else:
                         st.error("Confirmation failed. Please check the box AND type the title correctly.")
+
+            pending = st.session_state.get("pending_delete")
+            if pending and pending.get("doc_key") == doc_key:
+                preview = pending["preview"]
+                total = sum(len(points) for points in preview.values())
+
+                if total == 0:
+                    st.info("No matching chunks were found in the target collection(s) -- nothing to delete.")
+                    if st.button("Dismiss", key="dismiss_empty_delete_preview"):
+                        st.session_state.pending_delete = None
+                        st.rerun()
+                else:
+                    st.markdown("#### Confirm exactly what will be deleted")
+                    distinct_titles = set()
+                    for collection_name, points in preview.items():
+                        titles_here = {
+                            p.payload.get("metadata", {}).get("title", "(no title)") for p in points
+                        }
+                        distinct_titles |= titles_here
+                        st.write(f"- `{collection_name}`: **{len(points)}** chunk(s)")
+
+                    if len(distinct_titles) > 1:
+                        st.error(
+                            "⚠️ This selector matched more than one distinct title: "
+                            + ", ".join(f"'{t}'" for t in distinct_titles)
+                            + ". Refusing to proceed -- please investigate before deleting."
+                        )
+                    else:
+                        st.write(f"**Total: {total} chunk(s) across {len(preview)} collection(s).**")
+                        col_confirm, col_cancel = st.columns(2)
+                        with col_confirm:
+                            really_delete = st.button(
+                                f"⛔ Yes, permanently delete {total} chunk(s)",
+                                type="primary",
+                                use_container_width=True,
+                            )
+                        with col_cancel:
+                            cancel_delete = st.button("Cancel", use_container_width=True)
+
+                        if cancel_delete:
+                            st.session_state.pending_delete = None
+                            st.rerun()
+
+                        if really_delete:
+                            with st.spinner("Deleting document chunks..."):
+                                try:
+                                    total_chunks_deleted = 0
+                                    for collection_name, points in preview.items():
+                                        point_ids = [p.id for p in points]
+                                        qdrant_client.delete(
+                                            collection_name=collection_name,
+                                            points_selector=point_ids
+                                        )
+                                        st.write(f"🗑️ Deleted {len(point_ids)} chunks from `{collection_name}`.")
+                                        total_chunks_deleted += len(point_ids)
+
+                                    st.success(f"Successfully deleted a total of {total_chunks_deleted} chunks! 🗑️")
+
+                                    # Clear state
+                                    st.session_state.pending_delete = None
+                                    st.session_state.search_results = None
+                                    st.session_state.selected_points = []
+                                    st.rerun()
+
+                                except Exception as e:
+                                    st.error(f"An error occurred during deletion: {e}")
 
 
 if __name__ == "__main__":

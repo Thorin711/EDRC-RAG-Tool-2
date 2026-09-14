@@ -1,42 +1,21 @@
 # metadata_fixer.py
 import streamlit as st
-import uuid
 from qdrant_client.http.models import (
-    PointStruct, 
-    FieldCondition, 
-    MatchText, 
+    FieldCondition,
     Filter,
     Range  # Import Range for date filtering
 )
 
-from langchain_qdrant import Qdrant
-from langchain_huggingface import HuggingFaceEmbeddings
-
-# --- Constants from your other scripts ---
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
-QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io"
-COLLECTION_FULL = "full_papers"
-COLLECTION_JOURNAL = "journal_papers"
-COLLECTION_EDRC = "edrc_papers"
-
-ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
-
-# --- Cache functions from admin.py ---
-@st.cache_resource
-def load_embedding_model():
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
-@st.cache_resource
-def load_full_store(_embeddings, _url, _api_key):
-    """Loads and caches the FULL vector store."""
-    return Qdrant.from_existing_collection(
-        embedding=_embeddings,
-        collection_name=COLLECTION_FULL,
-        url=_url,
-        api_key=_api_key,
-        content_payload_key="page_content", 
-        metadata_payload_key="metadata"
-    )
+from common import (
+    get_secret,
+    get_qdrant_url,
+    load_embedding_model,
+    load_store,
+    build_exact_document_filter,
+    scroll_all,
+    COLLECTION_FULL,
+    ALL_COLLECTIONS,
+)
 
 def fixer_app():
     st.set_page_config(page_title="Metadata Fixer", page_icon="🛠️", layout="wide")
@@ -47,18 +26,19 @@ def fixer_app():
     if "scanned" not in st.session_state:
         st.session_state.scanned = False
 
-    qdrant_api_key = st.secrets.get("QDRANT_API_KEY")
+    qdrant_api_key = get_secret("QDRANT_API_KEY")
+    qdrant_url = get_qdrant_url()
     if not qdrant_api_key:
-        st.error("`QDRANT_API_KEY` not found in Streamlit secrets. App cannot connect.")
+        st.error("`QDRANT_API_KEY` not found in secrets (Streamlit or Env). App cannot connect.")
         st.stop()
 
     try:
         # We only need to load one store to get the underlying client
         # The client can access ALL collections
         embeddings = load_embedding_model()
-        vector_store = load_full_store(embeddings, QDRANT_URL, qdrant_api_key)
+        vector_store = load_store(embeddings, COLLECTION_FULL, qdrant_url, qdrant_api_key)
         qdrant_client = vector_store.client
-        st.info(f"Connected to Qdrant cluster at {QDRANT_URL}")
+        st.info(f"Connected to Qdrant cluster at {qdrant_url}")
     except Exception as e:
         st.error(f"Failed to load models or connect to Qdrant: {e}")
         st.stop()
@@ -169,29 +149,27 @@ def fixer_app():
                                 }
                             }
 
+                            # Exact match on doc_id (or, for documents
+                            # uploaded before doc_id existed, on the
+                            # ORIGINAL title) -- never a substring match, so
+                            # this can't sweep in a different document with
+                            # a similar title.
+                            exact_filter = build_exact_document_filter(current_meta)
+
                             with st.spinner(f"Saving changes for '{original_title}'..."):
                                 try:
                                     total_chunks_updated = 0
-                                    
+
                                     for collection_name in collections_found_in:
-                                        # Find all points in this collection matching the ORIGINAL title
-                                        title_filter = Filter(
-                                            must=[
-                                                FieldCondition(
-                                                    key="metadata.title",
-                                                    match=MatchText(text=original_title) # Find by old title
-                                                )
-                                            ]
+                                        points_to_update = scroll_all(
+                                            qdrant_client,
+                                            collection_name,
+                                            exact_filter,
+                                            with_payload=False,
                                         )
-                                        points_to_update, _ = qdrant_client.scroll(
-                                            collection_name=collection_name,
-                                            scroll_filter=title_filter,
-                                            limit=500,
-                                            with_payload=False
-                                        )
-                                        
+
                                         point_ids = [point.id for point in points_to_update]
-                                        
+
                                         if not point_ids:
                                             st.write(f"ℹ️ No matching chunks found in `{collection_name}`. Skipping.")
                                             continue

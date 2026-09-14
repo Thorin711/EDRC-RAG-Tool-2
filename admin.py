@@ -137,7 +137,7 @@ def admin_app():
                 st.markdown("---")
                 
                 apply_all_edit = st.checkbox(
-                    "Apply these metadata changes to ALL collections (full_papers, journal_papers, edrc_papers)",
+                    "Apply these metadata changes to ALL collections (full_papers_v2, journal_papers_v2, edrc_papers_v2)",
                     value=False,
                     help="If checked, this update will be applied to documents with the *original* title in all three collections."
                 )
@@ -231,7 +231,7 @@ def admin_app():
                 st.markdown("---")
 
                 apply_all_delete = st.checkbox(
-                    "Permanently delete from ALL collections (full_papers, journal_papers, edrc_papers)",
+                    "Permanently delete from ALL collections (full_papers_v2, journal_papers_v2, edrc_papers_v2)",
                     value=False,
                     help="If checked, this will delete all chunks matching this title from all three collections."
                 )

@@ -28,3 +28,10 @@ vector_db_journals/
 gemini.md
 create_index.py
 app_test.py
+secrets.txt
+
+# Qdrant backup/maintenance artifacts (Phase A/B tooling)
+backups/
+exports/
+*.snapshot
+tools/

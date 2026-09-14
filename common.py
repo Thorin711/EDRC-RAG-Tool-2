@@ -28,9 +28,9 @@ EMBEDDING_MODEL_NAME = "BAAI/bge-large-en-v1.5"
 # existing deployments that haven't added the secret yet don't break.
 DEFAULT_QDRANT_URL = "https://ba7e46f3-88ed-4d8b-99ed-8302a2d4095f.eu-west-2-0.aws.cloud.qdrant.io"
 
-COLLECTION_FULL = "full_papers"
-COLLECTION_JOURNAL = "journal_papers"
-COLLECTION_EDRC = "edrc_papers"
+COLLECTION_FULL = "full_papers_v2"
+COLLECTION_JOURNAL = "journal_papers_v2"
+COLLECTION_EDRC = "edrc_papers_v2"
 ALL_COLLECTIONS = [COLLECTION_FULL, COLLECTION_JOURNAL, COLLECTION_EDRC]
 
 DB_OPTIONS = {
